@@ -370,6 +370,60 @@ interface UserProfile {
     orderHistory: { id: string; date: string; total: number }[];
 }
 
+const translateText = async (text: string, to: 'sr' | 'ru') => {
+  const model = ai.getGenerativeModel({ model: 'gemini-pro' });
+  const prompt = `Translate this English text to ${to === 'sr' ? 'Serbian' : 'Russian'}:\n"${text}"`;
+  const result = await model.generateContent(prompt);
+  return result.response.text();
+};
+
+document.addEventListener('click', async (e) => {
+  const target = e.target as HTMLElement;
+  if (target.classList.contains('translate-btn')) {
+    const field = target.dataset.field as 'name' | 'description';
+    const enValue = (document.getElementById(`product-${field}-en`) as HTMLInputElement | HTMLTextAreaElement).value;
+    setState({ ...(field === 'name' ? { isTranslatingName: true } : { isTranslatingDesc: true }) });
+
+    const sr = await translateText(enValue, 'sr');
+    const ru = await translateText(enValue, 'ru');
+
+    (document.getElementById(`product-${field}-sr`) as HTMLInputElement | HTMLTextAreaElement).value = sr;
+    (document.getElementById(`product-${field}-ru`) as HTMLInputElement | HTMLTextAreaElement).value = ru;
+
+    setState({ ...(field === 'name' ? { isTranslatingName: false } : { isTranslatingDesc: false }) });
+  }
+});
+document.addEventListener('submit', (e) => {
+  const form = e.target as HTMLFormElement;
+  if (form.id === 'promo-notif-form') {
+    e.preventDefault();
+    const title = {
+      en: (document.getElementById('promo-notif-title-en') as HTMLInputElement).value,
+      sr: (document.getElementById('promo-notif-title-sr') as HTMLInputElement).value,
+      ru: (document.getElementById('promo-notif-title-ru') as HTMLInputElement).value,
+    };
+    const content = {
+      en: (document.getElementById('promo-notif-content-en') as HTMLTextAreaElement).value,
+      sr: (document.getElementById('promo-notif-content-sr') as HTMLTextAreaElement).value,
+      ru: (document.getElementById('promo-notif-content-ru') as HTMLTextAreaElement).value,
+    };
+
+    const newNotif = {
+      id: Date.now(),
+      date: new Date().toISOString().split('T')[0],
+      title,
+      content,
+    };
+
+    setState({
+      promoNotifHistory: [newNotif, ...state.promoNotifHistory]
+    });
+
+    alert('✅ Notification sent!');
+    form.reset();
+  }
+});
+
 const categories: { key: string; name: { [key in Language]: string } }[] = [
     { key: 'All', name: { en: 'All', sr: 'Све', ru: 'Все' } },
     { key: 'Classic', name: { en: 'Classic', sr: 'Класични', ru: 'Классика' } },
@@ -599,7 +653,59 @@ const App = () => {
     
     // Using a microtask to batch potential synchronous updates into a single render.
     queueMicrotask(render);
-  }
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const action = target.dataset?.action;
+        const id = target.dataset?.productId;
+        if (!action || !id) return;
+
+        const productId = parseInt(id, 10);
+        if (action === 'increment') incrementItem(productId);
+        if (action === 'decrement') decrementItem(productId);
+    });
+    document.addEventListener('submit', (e) => {
+        if ((e.target as HTMLFormElement).id === 'profile-form') {
+            e.preventDefault();
+            const name = (document.getElementById('profile-name') as HTMLInputElement).value;
+            const email = (document.getElementById('profile-email') as HTMLInputElement).value;
+            setState({
+            userProfile: { ...state.userProfile, name, email },
+            isEditingProfile: false
+            });
+        }
+    });
+
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'edit-profile-btn') {
+            setState({ isEditingProfile: true });
+        }
+        if (target.id === 'cancel-edit-profile-btn') {
+            setState({ isEditingProfile: false });
+        }
+    });
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.id === 'voice-command-btn' && recognition) {
+            recognition.start();
+            setState({ isListening: true, voiceFeedback: 'Listening...' });
+        }
+    });
+
+    if (recognition) {
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+            const command = event.results[0][0].transcript;
+            setState({ voiceFeedback: `Heard: "${command}"`, isListening: false });
+
+            // Пример: просто показываем текст — добавь парсинг для команд
+            console.log('Voice command:', command);
+        };
+
+        recognition.onerror = () => {
+            setState({ voiceFeedback: 'Error or canceled.', isListening: false });
+        };
+    }
+}
 
   // --- App Initialization ---
   if (window.Telegram?.WebApp) {
