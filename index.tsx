@@ -323,7 +323,7 @@ const translations = {
 };
 
 
-// --- DATA ---
+// --- DATA INTERFACES & INITIAL DATA ---
 interface Product {
   id: number;
   name: { [key in Language]: string };
@@ -363,6 +363,11 @@ interface PromotionalNotification {
     date: string;
     title: { [key in Language]: string };
     content: { [key in Language]: string };
+}
+interface UserProfile {
+    name: string;
+    email: string;
+    orderHistory: { id: string; date: string; total: number }[];
 }
 
 const categories: { key: string; name: { [key in Language]: string } }[] = [
@@ -449,31 +454,12 @@ const initialReviews: Review[] = [
 ];
 
 const salesHistory = [
-    // May
-    { productId: 2, date: '2024-05-02', quantity: 3 },
-    { productId: 3, date: '2024-05-05', quantity: 2 },
-    { productId: 1, date: '2024-05-08', quantity: 5 },
-    { productId: 4, date: '2024-05-12', quantity: 1 },
-    { productId: 2, date: '2024-05-20', quantity: 2 },
-    { productId: 3, date: '2024-05-28', quantity: 4 },
-    // June
-    { productId: 3, date: '2024-06-01', quantity: 5 },
-    { productId: 1, date: '2024-06-04', quantity: 3 },
-    { productId: 4, date: '2024-06-10', quantity: 2 },
-    { productId: 2, date: '2024-06-15', quantity: 4 },
-    { productId: 3, date: '2024-06-22', quantity: 3 },
-    { productId: 1, date: '2024-06-29', quantity: 2 },
-    // July
-    { productId: 1, date: '2024-07-03', quantity: 4 },
-    { productId: 2, date: '2024-07-05', quantity: 1 },
-    { productId: 4, date: '2024-07-08', quantity: 3 },
-    { productId: 3, date: '2024-07-11', quantity: 6 },
-    { productId: 2, date: '2024-07-15', quantity: 3 },
-    { productId: 1, date: '2024-07-21', quantity: 1 },
+    { productId: 2, date: '2024-05-02', quantity: 3 }, { productId: 3, date: '2024-05-05', quantity: 2 }, { productId: 1, date: '2024-05-08', quantity: 5 }, { productId: 4, date: '2024-05-12', quantity: 1 }, { productId: 2, date: '2024-05-20', quantity: 2 }, { productId: 3, date: '2024-05-28', quantity: 4 },
+    { productId: 3, date: '2024-06-01', quantity: 5 }, { productId: 1, date: '2024-06-04', quantity: 3 }, { productId: 4, date: '2024-06-10', quantity: 2 }, { productId: 2, date: '2024-06-15', quantity: 4 }, { productId: 3, date: '2024-06-22', quantity: 3 }, { productId: 1, date: '2024-06-29', quantity: 2 },
+    { productId: 1, date: '2024-07-03', quantity: 4 }, { productId: 2, date: '2024-07-05', quantity: 1 }, { productId: 4, date: '2024-07-08', quantity: 3 }, { productId: 3, date: '2024-07-11', quantity: 6 }, { productId: 2, date: '2024-07-15', quantity: 3 }, { productId: 1, date: '2024-07-21', quantity: 1 },
 ];
 
-
-const userProfile = {
+const initialUserProfile: UserProfile = {
     name: "Ana Petrović",
     email: "ana.petrovic@email.com",
     orderHistory: [
@@ -482,36 +468,26 @@ const userProfile = {
     ]
 };
 
+// --- HELPERS ---
+const loadFromStorage = <T,>(key: string, fallback: T): T => {
+    const stored = localStorage.getItem(key);
+    try {
+        return stored ? JSON.parse(stored) : fallback;
+    } catch (e) {
+        console.error(`Failed to parse ${key} from localStorage`, e);
+        localStorage.removeItem(key);
+        return fallback;
+    }
+};
 
-// --- STATE MANAGEMENT ---
-function createSignal<T>(value: T): [() => T, (newValue: T) => void] {
-  let internalValue = value;
-  const subscribers = new Set<() => void>();
+const saveToStorage = <T,>(key: string, data: T) => {
+    try {
+        localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {
+        console.error(`Failed to save ${key} to localStorage`, e);
+    }
+};
 
-  const getter = () => internalValue;
-
-  const setter = (newValue: T) => {
-    // The previous complex equality check was buggy with Map objects.
-    // For simplicity and to guarantee correctness, we remove the check and always trigger an update.
-    // This ensures the cart state will always update correctly when an item is added.
-    internalValue = newValue;
-    subscribers.forEach(cb => cb());
-  };
-
-  (setter as any).subscribe = (cb: () => void) => {
-    subscribers.add(cb);
-    return () => subscribers.delete(cb);
-  };
-
-  return [getter, setter];
-}
-
-
-type View = 'home' | 'catalog' | 'cart' | 'news' | 'promotions' | 'profile' | 'admin';
-type UserRole = 'user' | 'admin';
-type SalesReportItem = { productId: number; name: { [key in Language]: string }; totalQuantity: number; };
-
-// Helper to convert file to base64 for image previews
 const fileToBase64 = (file: File): Promise<string | ArrayBuffer | null> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -522,70 +498,112 @@ const fileToBase64 = (file: File): Promise<string | ArrayBuffer | null> => {
 };
 
 
+// --- STATE MANAGEMENT (REFACTORED) ---
+type View = 'home' | 'catalog' | 'cart' | 'news' | 'promotions' | 'profile' | 'admin';
+type UserRole = 'user' | 'admin';
+type SalesReportItem = { productId: number; name: { [key in Language]: string }; totalQuantity: number; };
+type Cart = { [productId: number]: number };
+
+// Define the shape of our global state
+interface AppState {
+    language: Language;
+    role: UserRole;
+    view: View;
+    selectedCategory: string;
+    cart: Cart;
+    products: Product[];
+    newsItems: NewsItem[];
+    promotions: Promotion[];
+    reviews: Review[];
+    logoUrl: string;
+    bannerUrl: string;
+    orderStatusNotifSettings: OrderStatusNotificationSettings;
+    promoNotifHistory: PromotionalNotification[];
+    userProfile: UserProfile;
+    activeProductReviews: Product | null;
+    isEditingProfile: boolean;
+    startDate: string;
+    endDate: string;
+    salesReport: SalesReportItem[] | null;
+    editingProduct: Product | null;
+    newProductImage: string | null;
+    editingNewsItem: NewsItem | null;
+    editingPromotion: Promotion | null;
+    isListening: boolean;
+    voiceFeedback: string | null;
+    isTranslatingName: boolean;
+    isTranslatingDesc: boolean;
+}
+
+// A single global state object with initial values.
+const state: AppState = {
+    language: 'en',
+    role: 'user',
+    view: 'home',
+    selectedCategory: 'All',
+    cart: {},
+    products: initialProducts,
+    newsItems: initialNewsItems,
+    promotions: initialPromotions,
+    reviews: initialReviews,
+    logoUrl: "https://placehold.co/200x50/3d3d3d/fdfcf9?text=Bela+Zora",
+    bannerUrl: "https://placehold.co/800x400/a3b18a/fdfcf9?text=Bela+Zora+Sapun",
+    orderStatusNotifSettings: {
+        processing: { enabled: true, templates: { en: "Hi {customer_name}, your order #{order_id} is now being processed.", sr: "Здраво {customer_name}, ваша поруџбина #{order_id} се сада обрађује.", ru: "Здравствуйте, {customer_name}, ваш заказ #{order_id} сейчас обрабатывается." }},
+        shipped: { enabled: true, templates: { en: "Good news, {customer_name}! Your order #{order_id} has been shipped.", sr: "Добре вести, {customer_name}! Ваша поруџбина #{order_id} је послата.", ru: "Хорошие новости, {customer_name}! Ваш заказ #{order_id} отправлен." }},
+        delivered: { enabled: false, templates: { en: "Your order #{order_id} has been delivered. We hope you enjoy your products!", sr: "Ваша поруџбина #{order_id} је испоручена. Надамо се да ћете уживати у нашим производима!", ru: "Ваш заказ #{order_id} доставлен. Надеемся, вам понравятся наши продукты!" }}
+    },
+    promoNotifHistory: [],
+    userProfile: initialUserProfile,
+    activeProductReviews: null,
+    isEditingProfile: false,
+    startDate: '2024-05-01',
+    endDate: '2024-07-31',
+    salesReport: null,
+    editingProduct: null,
+    newProductImage: null,
+    editingNewsItem: null,
+    editingPromotion: null,
+    isListening: false,
+    voiceFeedback: null,
+    isTranslatingName: false,
+    isTranslatingDesc: false,
+};
+
+// Define which keys are persisted to localStorage.
+const persistedKeys = new Set<keyof AppState>([
+    'products', 'newsItems', 'promotions', 'reviews', 'logoUrl', 'bannerUrl', 
+    'orderStatusNotifSettings', 'promoNotifHistory', 'userProfile'
+]);
+
+// Load persisted state from localStorage on startup.
+for (const key of persistedKeys) {
+    const storedValue = loadFromStorage(`bela-zora-${key}`, state[key]);
+    if (storedValue) {
+        (state as any)[key] = storedValue;
+    }
+}
+
+// --- MAIN APP COMPONENT ---
 const App = () => {
-  const [getCart, setCart] = createSignal<Map<number, number>>(new Map());
-  const [getLanguage, setLanguage] = createSignal<Language>('en');
-  const [getRole, setRole] = createSignal<UserRole>('user');
-  const [getView, setView] = createSignal<View>('home');
-  const [getSelectedCategory, setSelectedCategory] = createSignal<string>('All');
-  
-  // Dynamic Data State
-  const [getProducts, setProducts] = createSignal<Product[]>(initialProducts);
-  const [getNewsItems, setNewsItems] = createSignal<NewsItem[]>(initialNewsItems);
-  const [getPromotions, setPromotions] = createSignal<Promotion[]>(initialPromotions);
-  const [getReviews, setReviews] = createSignal<Review[]>(initialReviews);
-  const [getLogoUrl, setLogoUrl] = createSignal<string>("https://placehold.co/200x50/3d3d3d/fdfcf9?text=Bela+Zora");
-  const [getBannerUrl, setBannerUrl] = createSignal<string>("https://placehold.co/800x400/a3b18a/fdfcf9?text=Bela+Zora+Sapun");
+  // FIX: Moved `setState` inside the `App` component to resolve the scope issue where `render` was not accessible.
+  // This function updates the global state, persists relevant parts, and triggers a re-render.
+  function setState(newState: Partial<AppState>) {
+    Object.assign(state, newState);
 
-  // UI State
-  const [getActiveProductReviews, setActiveProductReviews] = createSignal<Product | null>(null);
-
-  // Admin State
-  const [getStartDate, setStartDate] = createSignal('2024-05-01');
-  const [getEndDate, setEndDate] = createSignal('2024-07-31');
-  const [getSalesReport, setSalesReport] = createSignal<SalesReportItem[] | null>(null);
-  const [getEditingProduct, setEditingProduct] = createSignal<Product | null>(null);
-  const [getNewProductImage, setNewProductImage] = createSignal<string | null>(null);
-  const [getEditingNewsItem, setEditingNewsItem] = createSignal<NewsItem | null>(null);
-  const [getEditingPromotion, setEditingPromotion] = createSignal<Promotion | null>(null);
-  const [getIsListening, setIsListening] = createSignal(false);
-  const [getVoiceFeedback, setVoiceFeedback] = createSignal<string | null>(null);
-  const [getIsTranslatingName, setIsTranslatingName] = createSignal(false);
-  const [getIsTranslatingDesc, setIsTranslatingDesc] = createSignal(false);
-  const [getOrderStatusNotifSettings, setOrderStatusNotifSettings] = createSignal<OrderStatusNotificationSettings>({
-    processing: {
-        enabled: true,
-        templates: {
-            en: "Hi {customer_name}, your order #{order_id} is now being processed.",
-            sr: "Здраво {customer_name}, ваша поруџбина #{order_id} се сада обрађује.",
-            ru: "Здравствуйте, {customer_name}, ваш заказ #{order_id} сейчас обрабатывается.",
-        }
-    },
-    shipped: {
-        enabled: true,
-        templates: {
-            en: "Good news, {customer_name}! Your order #{order_id} has been shipped.",
-            sr: "Добре вести, {customer_name}! Ваша поруџбина #{order_id} је послата.",
-            ru: "Хорошие новости, {customer_name}! Ваш заказ #{order_id} отправлен.",
-        }
-    },
-    delivered: {
-        enabled: false,
-        templates: {
-            en: "Your order #{order_id} has been delivered. We hope you enjoy your products!",
-            sr: "Ваша поруџбина #{order_id} је испоручена. Надамо се да ћете уживати у нашим производима!",
-            ru: "Ваш заказ #{order_id} доставлен. Надеемся, вам понравятся наши продукты!",
+    for (const key in newState) {
+        if (persistedKeys.has(key as keyof AppState)) {
+            saveToStorage(`bela-zora-${key}`, (newState as any)[key]);
         }
     }
-  });
-  const [getPromoNotifHistory, setPromoNotifHistory] = createSignal<PromotionalNotification[]>([]);
+    
+    // Using a microtask to batch potential synchronous updates into a single render.
+    queueMicrotask(render);
+  }
 
   // --- App Initialization ---
   if (window.Telegram?.WebApp) {
-      // Signal to the Telegram client that the app is ready.
-      // This is crucial for ensuring the webview is interactive and can prevent issues with event listeners.
       window.Telegram.WebApp.ready();
-      // Expand the app to its full height for a better user experience.
       window.Telegram.WebApp.expand();
   }
 
@@ -596,7 +614,7 @@ const App = () => {
   const recognition = SpeechRecognition ? new SpeechRecognition() : null;
 
   const t = (key: keyof typeof translations.en, ...args: any[]) => {
-    const lang = getLanguage();
+    const lang = state.language;
     const translation = translations[lang][key] || translations.en[key];
     if (typeof translation === 'function') {
       return (translation as (...args: any[]) => string)(...args);
@@ -606,49 +624,48 @@ const App = () => {
 
   // --- CART LOGIC ---
   const incrementItem = (productId: number) => {
-    const newCart = new Map(getCart());
-    const currentQuantity = newCart.get(productId) || 0;
-    newCart.set(productId, currentQuantity + 1);
-    setCart(newCart);
+    const newCart = {...state.cart};
+    const currentQuantity = newCart[productId] || 0;
+    newCart[productId] = currentQuantity + 1;
+    setState({ cart: newCart });
 
-    // Trigger animation only when adding a new item to the cart (quantity was 0)
     if (currentQuantity === 0) {
         const cartBtn = document.getElementById('cart-btn');
         if (cartBtn) {
             cartBtn.classList.add('updated');
             setTimeout(() => {
                 cartBtn.classList.remove('updated');
-            }, 400); // Duration should match the animation in CSS
+            }, 400);
         }
     }
   };
 
   const decrementItem = (productId: number) => {
-    const newCart = new Map(getCart());
-    const currentQuantity = newCart.get(productId) || 0;
+    const newCart = {...state.cart};
+    const currentQuantity = newCart[productId] || 0;
     if (currentQuantity > 1) {
-        newCart.set(productId, currentQuantity - 1);
+        newCart[productId] = currentQuantity - 1;
     } else {
-        newCart.delete(productId);
+        delete newCart[productId];
     }
-    setCart(newCart);
+    setState({ cart: newCart });
   };
 
   const getCartItemCount = () => {
-    return Array.from(getCart().values()).reduce((sum, count) => sum + count, 0);
+    return Object.values(state.cart).reduce((sum, count) => sum + count, 0);
   };
   
   const getCartTotal = () => {
-    return Array.from(getCart().entries()).reduce((total, [productId, quantity]) => {
-      const product = getProducts().find(p => p.id === productId);
+    return Object.entries(state.cart).reduce((total, [productId, quantity]) => {
+      const product = state.products.find(p => p.id === parseInt(productId, 10));
       return total + (product ? product.price * quantity : 0);
     }, 0);
   };
 
   // --- RENDERING ---
   const renderQuantityControl = (product: Product, type: 'small' | 'large' = 'large') => {
-      const quantity = getCart().get(product.id) || 0;
-      const lang = getLanguage();
+      const quantity = state.cart[product.id] || 0;
+      const lang = state.language;
 
       if (quantity === 0) {
           if (type === 'small') {
@@ -670,13 +687,13 @@ const App = () => {
     const cartItemCount = getCartItemCount();
     return `
       <header>
-        <img class="header-logo" src="${getLogoUrl()}" alt="${t('shopTitle')} Logo">
+        <img class="header-logo" src="${state.logoUrl}" alt="${t('shopTitle')} Logo">
         <div class="header-controls">
             <div class="lang-switcher">
                 <select id="lang-select" aria-label="Choose language">
-                    <option value="en" ${getLanguage() === 'en' ? 'selected' : ''}>EN</option>
-                    <option value="sr" ${getLanguage() === 'sr' ? 'selected' : ''}>SR</option>
-                    <option value="ru" ${getLanguage() === 'ru' ? 'selected' : ''}>RU</option>
+                    <option value="en" ${state.language === 'en' ? 'selected' : ''}>EN</option>
+                    <option value="sr" ${state.language === 'sr' ? 'selected' : ''}>SR</option>
+                    <option value="ru" ${state.language === 'ru' ? 'selected' : ''}>RU</option>
                 </select>
             </div>
             <button class="cart-button" id="cart-btn" aria-label="${t('viewingCart', cartItemCount)}">
@@ -691,7 +708,6 @@ const App = () => {
   };
 
   const renderFooterNav = () => {
-      const currentView = getView();
       const navItems: {view: View, label: string, icon: string}[] = [
           { view: 'home', label: t('navHome'), icon: '<path stroke-linecap="round" stroke-linejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />' },
           { view: 'catalog', label: t('navCatalog'), icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 0 0-3 3h15.75m-12.75-3h11.218c.51 0 .962-.343 1.087-.835l.383-1.437M7.5 14.25V5.106M7.5 14.25H3.375c-.621 0-1.125-.504-1.125-1.125V11.25m17.25-6.188L16.625 16.5h-1.25a2.25 2.25 0 0 1-2.25-2.25V5.106M9 12.75h9.075M12 12.75v-1.5a1.5 1.5 0 0 1 3 0v1.5" />'},
@@ -700,14 +716,14 @@ const App = () => {
           { view: 'profile', label: t('navProfile'), icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z" />' }
       ];
 
-      if (getRole() === 'admin') {
+      if (state.role === 'admin') {
           navItems.push({ view: 'admin', label: t('navAdmin'), icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75m-3-7.036A11.959 11.959 0 0 1 3.598 6 11.99 11.99 0 0 0 3 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.286Zm0 13.036h.008v.008h-.008v-.008Z" />' });
       }
 
       return `
         <nav class="footer-nav">
           ${navItems.map(item => `
-            <button class="nav-button ${currentView === item.view ? 'active' : ''}" data-view="${item.view}">
+            <button class="nav-button ${state.view === item.view ? 'active' : ''}" data-view="${item.view}">
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">${item.icon}</svg>
               <span>${item.label}</span>
             </button>
@@ -717,14 +733,14 @@ const App = () => {
   }
 
   const renderHomePage = () => {
-    const lang = getLanguage();
-    const latestPromotion = getPromotions().sort((a,b) => b.id - a.id)[0];
-    const latestNews = getNewsItems().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
-    const popularProducts = getProducts().slice(0, 3); // Top 3 products
+    const lang = state.language;
+    const latestPromotion = [...state.promotions].sort((a,b) => b.id - a.id)[0];
+    const latestNews = [...state.newsItems].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    const popularProducts = state.products.slice(0, 3); // Top 3 products
 
     return `
       <div class="home-header">
-        <img src="${getBannerUrl()}" alt="Bela Zora Sapun natural soaps header image" class="home-header-img"/>
+        <img src="${state.bannerUrl}" alt="Bela Zora Sapun natural soaps header image" class="home-header-img"/>
       </div>
 
       ${latestPromotion ? `
@@ -769,29 +785,26 @@ const App = () => {
   };
   
   const renderCatalogPage = () => {
-    const lang = getLanguage();
-    const selectedCategory = getSelectedCategory();
-    const products = getProducts();
-    const allReviews = getReviews();
+    const lang = state.language;
     
     const categoryFilters = `
         <div class="category-filters">
             ${categories.map(cat => `
-                <button class="category-btn ${selectedCategory === cat.key ? 'active' : ''}" data-category="${cat.key}">
+                <button class="category-btn ${state.selectedCategory === cat.key ? 'active' : ''}" data-category="${cat.key}">
                     ${cat.name[lang]}
                 </button>
             `).join('')}
         </div>
     `;
 
-    const filteredProducts = selectedCategory === 'All'
-        ? products
-        : products.filter(p => p.category.en === selectedCategory);
+    const filteredProducts = state.selectedCategory === 'All'
+        ? state.products
+        : state.products.filter(p => p.category.en === state.selectedCategory);
 
     const productGrid = `
       <div class="product-grid">
         ${filteredProducts.map(product => {
-            const approvedReviews = allReviews.filter(r => r.productId === product.id && r.status === 'approved');
+            const approvedReviews = state.reviews.filter(r => r.productId === product.id && r.status === 'approved');
             const averageRating = approvedReviews.length > 0
                 ? approvedReviews.reduce((sum, r) => sum + r.rating, 0) / approvedReviews.length
                 : 0;
@@ -821,22 +834,22 @@ const App = () => {
   }
 
   const renderCartPage = () => {
-    const cart = getCart();
-    const lang = getLanguage();
-    if (cart.size === 0) {
+    const lang = state.language;
+    if (Object.keys(state.cart).length === 0) {
       return `
         <main class="cart-view">
             <div class="empty-cart">
                 <h2 class="page-title">${t('emptyCartHeader')}</h2>
                 <p>${t('emptyCartMessage')}</p>
-                <button class="back-to-shop-btn" id="back-to-shop-btn">${t('continueShopping')}</button>
+                <button class="back-to-shop-btn" data-view="catalog">${t('continueShopping')}</button>
             </div>
         </main>
       `;
     }
 
-    const cartItems = Array.from(cart.entries()).map(([productId, quantity]) => {
-      const product = getProducts().find(p => p.id === productId);
+    const cartItems = Object.entries(state.cart).map(([productIdStr, quantity]) => {
+      const productId = parseInt(productIdStr, 10);
+      const product = state.products.find(p => p.id === productId);
       if (!product) return '';
       return `
         <div class="cart-item" data-product-id="${product.id}">
@@ -863,7 +876,7 @@ const App = () => {
                 <span>${getCartTotal().toFixed(0)} RSD</span>
             </div>
             <div class="cart-actions">
-                <button class="back-to-shop-btn" id="back-to-shop-btn">${t('continueShopping')}</button>
+                <button class="back-to-shop-btn" data-view="catalog">${t('continueShopping')}</button>
                 <button class="checkout-btn" id="checkout-btn">${t('checkout')}</button>
             </div>
         </div>
@@ -872,8 +885,8 @@ const App = () => {
   };
 
   const renderNewsPage = () => {
-      const lang = getLanguage();
-      const newsItems = getNewsItems().sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const lang = state.language;
+      const newsItems = [...state.newsItems].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       return `
         <h2 class="page-title">${t('newsTitle')}</h2>
         ${newsItems.map(item => `
@@ -887,8 +900,8 @@ const App = () => {
   };
 
   const renderPromotionsPage = () => {
-    const lang = getLanguage();
-    const promotions = getPromotions().sort((a,b) => b.id - a.id);
+    const lang = state.language;
+    const promotions = [...state.promotions].sort((a,b) => b.id - a.id);
     return `
       <h2 class="page-title">${t('promotionsTitle')}</h2>
       ${promotions.map(item => `
@@ -900,44 +913,69 @@ const App = () => {
     `;
   };
   
-  const renderProfilePage = () => `
-    <h2 class="page-title">${t('profileTitle')}</h2>
-    <div class="content-card profile-info">
-        <h3>${t('personalInfo')}</h3>
-        <p><strong>${t('name')}:</strong> ${userProfile.name}</p>
-        <p><strong>${t('email')}:</strong> ${userProfile.email}</p>
-    </div>
-    <div class="content-card">
-        <h3>${t('orderHistory')}</h3>
-        ${userProfile.orderHistory.map(order => `
-            <div class="order-history-item">
-                <span>${t('order')} #${order.id} (${t('date')}: ${order.date})</span>
-                <strong>${order.total.toFixed(0)} RSD</strong>
-            </div>
-        `).join('')}
-    </div>
-  `;
+  const renderProfilePage = () => {
+    const lang = state.language;
+
+    const renderOrderHistory = () => `
+        <div class="content-card">
+            <h3>${t('orderHistory')}</h3>
+            ${state.userProfile.orderHistory.map(order => `
+                <div class="order-history-item">
+                    <span>${t('order')} #${order.id} (${t('date')}: ${order.date})</span>
+                    <strong>${order.total.toFixed(0)} RSD</strong>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    if (state.isEditingProfile) {
+        return `
+            <h2 class="page-title">${t('profileTitle')}</h2>
+            <form id="profile-form" class="admin-form content-card">
+                <h3>${t('personalInfo')}</h3>
+                <div class="form-group">
+                    <label for="profile-name">${t('name')}</label>
+                    <input type="text" id="profile-name" value="${state.userProfile.name}" required>
+                </div>
+                <div class="form-group">
+                    <label for="profile-email">${t('email')}</label>
+                    <input type="email" id="profile-email" value="${state.userProfile.email}" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="admin-button">${t('saveSettings')}</button>
+                    <button type="button" id="cancel-edit-profile-btn" class="cancel-btn">${t('cancel')}</button>
+                </div>
+            </form>
+            ${renderOrderHistory()}
+        `;
+    }
+
+    return `
+        <h2 class="page-title">${t('profileTitle')}</h2>
+        <div class="content-card profile-info">
+            <button id="edit-profile-btn" class="edit-btn" style="float: right;">${t('edit')}</button>
+            <h3>${t('personalInfo')}</h3>
+            <p><strong>${t('name')}:</strong> ${state.userProfile.name}</p>
+            <p><strong>${t('email')}:</strong> ${state.userProfile.email}</p>
+        </div>
+        ${renderOrderHistory()}
+    `;
+  };
 
   const renderAdminPage = () => {
-      const report = getSalesReport();
-      const lang = getLanguage();
-      const products = getProducts();
-      const newsItems = getNewsItems();
-      const promotions = getPromotions();
-      const reviews = getReviews();
-      const editingProduct = getEditingProduct();
-      const imagePreviewSrc = getNewProductImage();
-      const editingNewsItem = getEditingNewsItem();
-      const editingPromotion = getEditingPromotion();
-      const orderStatusSettings = getOrderStatusNotifSettings();
-      const promoHistory = getPromoNotifHistory();
+      const lang = state.language;
+      const { 
+          salesReport, products, newsItems, promotions, reviews, editingProduct, 
+          newProductImage, editingNewsItem, editingPromotion, orderStatusNotifSettings, 
+          promoNotifHistory, isListening, voiceFeedback, isTranslatingName, isTranslatingDesc
+      } = state;
       
       const renderReport = () => {
-          if (!report) return '';
-          if (report.length === 0) return `<p>No sales data for the selected period.</p>`;
+          if (!salesReport) return '';
+          if (salesReport.length === 0) return `<p>No sales data for the selected period.</p>`;
           return `
               <ul class="sales-report-list">
-                  ${report.map(item => `
+                  ${salesReport.map(item => `
                       <li>
                           <span>${item.name[lang]}</span>
                           <strong>${t('totalSold')}: ${item.totalQuantity}</strong>
@@ -947,8 +985,6 @@ const App = () => {
           `;
       };
       
-      const voiceFeedback = getVoiceFeedback();
-      const isListening = getIsListening();
       const pendingReviews = reviews.filter(r => r.status === 'pending');
 
       return `
@@ -964,7 +1000,7 @@ const App = () => {
                     <label for="logo-upload" class="file-input-label">${t('chooseFile')}</label>
                     <div class="settings-preview-container">
                         <p>${t('currentLogo')}:</p>
-                        <img src="${getLogoUrl()}" alt="Current Logo Preview" class="settings-preview-img logo-preview"/>
+                        <img src="${state.logoUrl}" alt="Current Logo Preview" class="settings-preview-img logo-preview"/>
                     </div>
                 </div>
                 <div class="form-group">
@@ -973,7 +1009,7 @@ const App = () => {
                     <label for="banner-upload" class="file-input-label">${t('chooseFile')}</label>
                     <div class="settings-preview-container">
                         <p>${t('currentBanner')}:</p>
-                        <img src="${getBannerUrl()}" alt="Current Banner Preview" class="settings-preview-img banner-preview"/>
+                        <img src="${state.bannerUrl}" alt="Current Banner Preview" class="settings-preview-img banner-preview"/>
                     </div>
                 </div>
             </div>
@@ -988,19 +1024,19 @@ const App = () => {
                 <h4>${t('orderStatusNotifications')}</h4>
                 <p class="subsection-description">${t('enableNotificationsFor')}</p>
                 <form id="order-status-notif-form" class="admin-form">
-                    ${Object.keys(orderStatusSettings).map(statusKey => `
+                    ${Object.keys(orderStatusNotifSettings).map(statusKey => `
                         <div class="form-group notification-status-group">
                             <label class="toggle-switch">
-                                <input type="checkbox" id="notif-enabled-${statusKey}" ${orderStatusSettings[statusKey].enabled ? 'checked' : ''}>
+                                <input type="checkbox" id="notif-enabled-${statusKey}" ${orderStatusNotifSettings[statusKey].enabled ? 'checked' : ''}>
                                 <span class="slider"></span>
                             </label>
                             <label for="notif-enabled-${statusKey}" class="toggle-label">${t(`status${statusKey.charAt(0).toUpperCase() + statusKey.slice(1)}` as any)}</label>
                             
                             <div class="i18n-textarea-group">
                                 <label>${t('notificationTemplate')}</label>
-                                <textarea id="notif-template-${statusKey}-en" rows="3" placeholder="EN Template">${orderStatusSettings[statusKey].templates.en}</textarea>
-                                <textarea id="notif-template-${statusKey}-sr" rows="3" placeholder="SR Template">${orderStatusSettings[statusKey].templates.sr}</textarea>
-                                <textarea id="notif-template-${statusKey}-ru" rows="3" placeholder="RU Template">${orderStatusSettings[statusKey].templates.ru}</textarea>
+                                <textarea id="notif-template-${statusKey}-en" rows="3" placeholder="EN Template">${orderStatusNotifSettings[statusKey].templates.en}</textarea>
+                                <textarea id="notif-template-${statusKey}-sr" rows="3" placeholder="SR Template">${orderStatusNotifSettings[statusKey].templates.sr}</textarea>
+                                <textarea id="notif-template-${statusKey}-ru" rows="3" placeholder="RU Template">${orderStatusNotifSettings[statusKey].templates.ru}</textarea>
                                 <p class="form-hint">${t('templatePlaceholderInfo')}</p>
                             </div>
                         </div>
@@ -1035,9 +1071,9 @@ const App = () => {
 
                  <div class="promo-history">
                     <h5>${t('sentNotificationsHistory')}</h5>
-                    ${promoHistory.length > 0 ? `
+                    ${promoNotifHistory.length > 0 ? `
                         <ul class="promo-history-list">
-                            ${promoHistory.map(item => `
+                            ${promoNotifHistory.map(item => `
                                 <li class="promo-history-item">
                                     <span class="history-date">${item.date}</span>
                                     <strong class="history-title">${item.title[lang]}</strong>
@@ -1082,7 +1118,7 @@ const App = () => {
                     <label>${t('nameLabel')}</label>
                     <div class="translatable-field">
                       <input type="text" id="product-name-en" placeholder="${t('nameLabel')} (EN)" required>
-                      <button type="button" class="translate-btn ${getIsTranslatingName() ? 'loading' : ''}" data-field="name" title="${t('translate')}">
+                      <button type="button" class="translate-btn ${isTranslatingName ? 'loading' : ''}" data-field="name" title="${t('translate')}">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 0 1-3.827-5.802" />
                         </svg>
@@ -1095,7 +1131,7 @@ const App = () => {
                     <label>${t('descriptionLabel')}</label>
                     <div class="translatable-field">
                       <textarea id="product-desc-en" placeholder="${t('descriptionLabel')} (EN)" rows="3" required></textarea>
-                      <button type="button" class="translate-btn ${getIsTranslatingDesc() ? 'loading' : ''}" data-field="description" title="${t('translate')}">
+                      <button type="button" class="translate-btn ${isTranslatingDesc ? 'loading' : ''}" data-field="description" title="${t('translate')}">
                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                           <path stroke-linecap="round" stroke-linejoin="round" d="m10.5 21 5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 0 1-3.827-5.802" />
                         </svg>
@@ -1113,7 +1149,7 @@ const App = () => {
                     <input type="file" id="product-image-upload" class="file-input" accept="image/*">
                     <label for="product-image-upload" class="file-input-label">${t('chooseFile')}</label>
                     <div class="image-preview-container">
-                        ${imagePreviewSrc ? `<img src="${imagePreviewSrc}" alt="Image Preview" class="image-preview"/>` : ''}
+                        ${newProductImage ? `<img src="${newProductImage}" alt="Image Preview" class="image-preview"/>` : ''}
                     </div>
                 </div>
                 <div class="form-group">
@@ -1218,9 +1254,9 @@ const App = () => {
             <h3>${t('salesStatistics')}</h3>
             <div class="date-range-selector">
                 <label for="start-date">${t('startDate')}</label>
-                <input type="date" id="start-date" value="${getStartDate()}">
+                <input type="date" id="start-date" value="${state.startDate}">
                 <label for="end-date">${t('endDate')}</label>
-                <input type="date" id="end-date" value="${getEndDate()}">
+                <input type="date" id="end-date" value="${state.endDate}">
             </div>
             <button id="generate-report-btn" class="admin-button">${t('generateReport')}</button>
             <div id="sales-report-container">
@@ -1239,11 +1275,11 @@ const App = () => {
   };
   
   const renderProductReviewsModal = () => {
-    const product = getActiveProductReviews();
+    const product = state.activeProductReviews;
     if (!product) return '';
 
-    const lang = getLanguage();
-    const approvedReviews = getReviews().filter(r => r.productId === product.id && r.status === 'approved');
+    const lang = state.language;
+    const approvedReviews = state.reviews.filter(r => r.productId === product.id && r.status === 'approved');
 
     return `
         <div class="reviews-modal-overlay" id="reviews-modal-overlay">
@@ -1293,8 +1329,8 @@ const App = () => {
   }
 
   const showVoiceFeedback = (message: string) => {
-      setVoiceFeedback(message);
-      setTimeout(() => setVoiceFeedback(null), 3000);
+      setState({ voiceFeedback: message });
+      setTimeout(() => setState({ voiceFeedback: null }), 3000);
   };
 
   const handleVoiceCommand = (transcript: string) => {
@@ -1335,10 +1371,10 @@ const App = () => {
     }
     // Exit
     else if (command.includes('go home') || command.includes('почетну') || command.includes('главную')) {
-        setView('home');
+        setState({ view: 'home' });
         executedCommand = 'Go Home';
     } else if (command.includes('exit admin') || command.includes('изађи') || command.includes('выйти')) {
-        setView('home');
+        setState({ view: 'home' });
         executedCommand = 'Exit Admin';
     }
 
@@ -1354,17 +1390,17 @@ const App = () => {
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-          setIsListening(true);
+          setState({ isListening: true });
           showVoiceFeedback(t('voiceListening'));
       };
       
       recognition.onend = () => {
-          setIsListening(false);
+          setState({ isListening: false });
       };
       
       recognition.onerror = (event: any) => {
           console.error('Speech recognition error:', event.error);
-          setIsListening(false);
+          setState({ isListening: false });
       };
 
       recognition.onresult = (event: any) => {
@@ -1374,15 +1410,15 @@ const App = () => {
   }
   
   const handleTranslate = async (field: 'name' | 'description') => {
-      const sourceTextEl = document.getElementById(`product-${field}-en`) as HTMLInputElement | HTMLTextAreaElement;
+      const sourceTextEl = document.getElementById(`product-${field === 'name' ? 'name' : 'desc'}-en`) as HTMLInputElement | HTMLTextAreaElement;
       const sourceText = sourceTextEl.value;
       if (!sourceText) {
           alert('Please enter some English text first.');
           return;
       }
 
-      if (field === 'name') setIsTranslatingName(true);
-      else setIsTranslatingDesc(true);
+      if (field === 'name') setState({ isTranslatingName: true });
+      else setState({ isTranslatingDesc: true });
 
       try {
           const response = await ai.models.generateContent({
@@ -1403,18 +1439,18 @@ const App = () => {
           const translations = JSON.parse(jsonText);
 
           if (translations.sr) {
-              (document.getElementById(`product-${field}-sr`) as HTMLInputElement).value = translations.sr;
+              (document.getElementById(`product-${field === 'name' ? 'name' : 'desc'}-sr`) as HTMLInputElement).value = translations.sr;
           }
           if (translations.ru) {
-              (document.getElementById(`product-${field}-ru`) as HTMLInputElement).value = translations.ru;
+              (document.getElementById(`product-${field === 'name' ? 'name' : 'desc'}-ru`) as HTMLInputElement).value = translations.ru;
           }
 
       } catch (error) {
           console.error("Translation failed:", error);
           alert("Translation failed. Please check the console for details.");
       } finally {
-          if (field === 'name') setIsTranslatingName(false);
-          else setIsTranslatingDesc(false);
+          if (field === 'name') setState({ isTranslatingName: false });
+          else setState({ isTranslatingDesc: false });
       }
   };
 
@@ -1435,13 +1471,12 @@ const App = () => {
                     obs.unobserve(img);
                 }
             });
-        }, { rootMargin: '0px 0px 200px 0px' }); // Load images when they are 200px from the viewport
+        }, { rootMargin: '0px 0px 200px 0px' });
 
         lazyImages.forEach(img => {
             observer.observe(img);
         });
     } else {
-        // Fallback for older browsers: load all images immediately.
         lazyImages.forEach(img => {
             const image = img as HTMLImageElement;
             const src = image.dataset.src;
@@ -1452,403 +1487,151 @@ const App = () => {
         });
     }
   };
+  
+  const rootElement = document.getElementById('root');
+  if (!rootElement) throw new Error("Root element not found");
 
-  const attachEventListeners = () => {
-    // Header
-    document.getElementById('cart-btn')?.addEventListener('click', () => setView('cart'));
-    document.getElementById('lang-select')?.addEventListener('change', (e) => {
-        setLanguage((e.target as HTMLSelectElement).value as Language);
-    });
+  // --- GLOBAL EVENT LISTENER ---
+  rootElement.addEventListener('click', async (e) => {
+      const target = e.target as HTMLElement;
+      
+      const viewButton = target.closest<HTMLElement>('[data-view]');
+      if (viewButton) {
+          setState({ view: viewButton.dataset.view as View });
+          return;
+      }
+      
+      const categoryButton = target.closest<HTMLElement>('[data-category]');
+      if (categoryButton) {
+          setState({ selectedCategory: categoryButton.dataset.category! });
+          return;
+      }
 
-    // Footer Nav
-    document.querySelectorAll('.nav-button').forEach(button => {
-        button.addEventListener('click', e => {
-            const view = (e.currentTarget as HTMLElement).dataset.view as View;
-            if (view) setView(view);
-        });
-    });
+      const quantityButton = target.closest<HTMLElement>('[data-product-id][data-action]');
+      if (quantityButton) {
+          const productId = parseInt(quantityButton.dataset.productId!, 10);
+          const action = quantityButton.dataset.action;
+          if (action === 'increment') incrementItem(productId);
+          else if (action === 'decrement') decrementItem(productId);
+          return;
+      }
+      
+      if (target.closest('#cart-btn')) { setState({ view: 'cart' }); return; }
+      if (target.closest('#edit-profile-btn')) { setState({ isEditingProfile: true }); return; }
+      if (target.closest('#cancel-edit-profile-btn')) { setState({ isEditingProfile: false }); return; }
+      
+      const reviewsSummary = target.closest<HTMLElement>('.product-reviews-summary');
+      if(reviewsSummary) {
+          const productId = parseInt(reviewsSummary.dataset.productId!, 10);
+          const product = state.products.find(p => p.id === productId);
+          if (product) setState({ activeProductReviews: product });
+          return;
+      }
+      
+      if (target.matches('#reviews-modal-overlay') || target.closest('#close-reviews-modal-btn')) {
+          setState({ activeProductReviews: null });
+          return;
+      }
+      
+      const checkoutBtn = target.closest<HTMLButtonElement>('#checkout-btn');
+      if (checkoutBtn) {
+           if (window.Telegram?.WebApp) {
+                const orderData = { items: state.cart, total: getCartTotal() };
+                const backendUrl = 'https://bela-zora-sapun-bot.onrender.com/process-order';
 
-    // Universal quantity controls and review modal listener
-    document.getElementById('root')?.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        
-        // Quantity controls
-        const quantityButton = target.closest('[data-product-id][data-action]');
-        if (quantityButton) {
-            const productId = parseInt(quantityButton.getAttribute('data-product-id')!, 10);
-            const action = quantityButton.getAttribute('data-action');
-            if (action === 'increment') {
-                incrementItem(productId);
-            } else if (action === 'decrement') {
-                decrementItem(productId);
+                try {
+                    checkoutBtn.disabled = true;
+                    checkoutBtn.textContent = t('processing');
+                    const response = await fetch(backendUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderData, initData: window.Telegram.WebApp.initData }),
+                    });
+                    if (!response.ok) throw new Error(`Server responded with ${response.status}`);
+                    window.Telegram.WebApp.close();
+                } catch (error) {
+                    console.error('Checkout failed:', error);
+                    window.Telegram.WebApp.showAlert('Could not place order. Please try again later.');
+                    checkoutBtn.disabled = false;
+                    checkoutBtn.textContent = t('checkout');
+                }
+            } else {
+               alert(`Order Placed!\nDetails: ${JSON.stringify(state.cart)}\n(This is a simulation)`);
+               setState({ cart: {}, view: 'catalog' });
             }
             return;
-        }
-
-        // Open reviews modal
-        const reviewsSummary = target.closest('.product-reviews-summary');
-        if(reviewsSummary) {
-            const productId = parseInt(reviewsSummary.getAttribute('data-product-id')!, 10);
-            const product = getProducts().find(p => p.id === productId);
-            if (product) {
-                setActiveProductReviews(product);
-            }
-        }
-    });
-
-    // Modal listeners
-    if (getActiveProductReviews()) {
-        document.getElementById('reviews-modal-overlay')?.addEventListener('click', (e) => {
-            if (e.target === e.currentTarget) {
-                setActiveProductReviews(null);
-            }
-        });
-        document.getElementById('close-reviews-modal-btn')?.addEventListener('click', () => setActiveProductReviews(null));
-        
-        const reviewForm = document.getElementById('review-form') as HTMLFormElement;
-        reviewForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const product = getActiveProductReviews();
-            if(!product) return;
-
-            const rating = parseInt((reviewForm.querySelector('input[name="rating"]:checked') as HTMLInputElement)?.value, 10);
-            const title = (document.getElementById('review-title') as HTMLInputElement).value;
-            const content = (document.getElementById('review-content') as HTMLTextAreaElement).value;
-
-            const newReview: Review = {
-                id: Date.now(),
-                productId: product.id,
-                author: "User", // Mock user name
-                rating: rating,
-                title: { en: title, sr: title, ru: title }, // For simplicity, using same text. A real app would translate.
-                content: { en: content, sr: content, ru: content },
-                status: 'pending'
-            };
-
-            setReviews([newReview, ...getReviews()]);
-            alert(t('reviewSubmitted'));
-            setActiveProductReviews(null);
-        });
-    }
-
-    const view = getView();
-
-    if (view === 'catalog') {
-      document.querySelectorAll('.category-btn').forEach(button => {
-        button.addEventListener('click', (e) => {
-            const category = (e.currentTarget as HTMLElement).dataset.category;
-            if (category) {
-                setSelectedCategory(category);
-            }
-        });
-      });
-    } else if (view === 'cart') {
-      document.getElementById('back-to-shop-btn')?.addEventListener('click', () => setView('catalog'));
+      }
       
-      document.getElementById('checkout-btn')?.addEventListener('click', async (e) => {
-        const checkoutBtn = e.currentTarget as HTMLButtonElement;
-        if (window.Telegram?.WebApp) {
-            const orderData = {
-                items: Object.fromEntries(getCart()),
-                total: getCartTotal()
-            };
-
-            // !!! IMPORTANT !!!
-            // Replace this URL with the URL of your deployed Python backend from Render.com
-            const backendUrl = 'https://bela-zora-sapun-bot.onrender.com/process-order'; 
-
-            try {
-                checkoutBtn.disabled = true;
-                checkoutBtn.textContent = t('processing');
-
-                const response = await fetch(backendUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        orderData: orderData,
-                        initData: window.Telegram.WebApp.initData
-                    }),
-                });
-
-                if (!response.ok) {
-                    throw new Error(`Server responded with ${response.status}`);
-                }
-                
-                // The bot will send a confirmation message. We can close the app now.
-                window.Telegram.WebApp.close();
-
-            } catch (error) {
-                console.error('Checkout failed:', error);
-                window.Telegram.WebApp.showAlert('Could not place order. Please try again later.');
-                checkoutBtn.disabled = false;
-                checkoutBtn.textContent = t('checkout');
-            }
-        } else {
-           // Fallback for browser testing
-           alert(`Order Placed!\nDetails: ${JSON.stringify(Object.fromEntries(getCart()))}\n(This is a simulation)`);
-           setCart(new Map());
-           setView('catalog');
-        }
-      });
-    } else if (view === 'admin') {
-        // General Settings
-        document.getElementById('logo-upload')?.addEventListener('change', async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                const base64 = await fileToBase64(file) as string;
-                setLogoUrl(base64);
-            }
-        });
-        document.getElementById('banner-upload')?.addEventListener('change', async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                const base64 = await fileToBase64(file) as string;
-                setBannerUrl(base64);
-            }
-        });
-
-        // Notification Management
-        const orderStatusNotifForm = document.getElementById('order-status-notif-form') as HTMLFormElement;
-        orderStatusNotifForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const newSettings: OrderStatusNotificationSettings = {};
-            Object.keys(getOrderStatusNotifSettings()).forEach(statusKey => {
-                newSettings[statusKey] = {
-                    enabled: (document.getElementById(`notif-enabled-${statusKey}`) as HTMLInputElement).checked,
-                    templates: {
-                        en: (document.getElementById(`notif-template-${statusKey}-en`) as HTMLTextAreaElement).value,
-                        sr: (document.getElementById(`notif-template-${statusKey}-sr`) as HTMLTextAreaElement).value,
-                        ru: (document.getElementById(`notif-template-${statusKey}-ru`) as HTMLTextAreaElement).value,
-                    }
-                };
-            });
-            setOrderStatusNotifSettings(newSettings);
-            alert('Notification settings saved!');
-        });
-        
-        const promoNotifForm = document.getElementById('promo-notif-form') as HTMLFormElement;
-        promoNotifForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            if(confirm(t('confirmSend'))) {
-                const newPromo: PromotionalNotification = {
-                    id: Date.now(),
-                    date: new Date().toISOString().split('T')[0],
-                    title: {
-                        en: (document.getElementById('promo-notif-title-en') as HTMLInputElement).value,
-                        sr: (document.getElementById('promo-notif-title-sr') as HTMLInputElement).value,
-                        ru: (document.getElementById('promo-notif-title-ru') as HTMLInputElement).value,
-                    },
-                    content: {
-                        en: (document.getElementById('promo-notif-content-en') as HTMLTextAreaElement).value,
-                        sr: (document.getElementById('promo-notif-content-sr') as HTMLTextAreaElement).value,
-                        ru: (document.getElementById('promo-notif-content-ru') as HTMLTextAreaElement).value,
-                    }
-                };
-                setPromoNotifHistory([newPromo, ...getPromoNotifHistory()]);
-                promoNotifForm.reset();
-                alert(t('notificationSentSuccess'));
-            }
-        });
-
-        // Voice Control
-        document.getElementById('voice-control-btn')?.addEventListener('click', () => {
-            if (!recognition) return;
-            if (getIsListening()) {
-                recognition.stop();
-            } else {
-                const lang = getLanguage();
-                recognition.lang = lang === 'sr' ? 'sr-RS' : lang === 'ru' ? 'ru-RU' : 'en-US';
-                recognition.start();
-            }
-        });
-
-        // Sales Report
-        document.getElementById('start-date')?.addEventListener('change', e => setStartDate((e.target as HTMLInputElement).value));
-        document.getElementById('end-date')?.addEventListener('change', e => setEndDate((e.target as HTMLInputElement).value));
-        document.getElementById('generate-report-btn')?.addEventListener('click', () => {
-            const start = new Date(getStartDate());
-            const end = new Date(getEndDate());
-            end.setHours(23, 59, 59, 999); // Include the whole end day
-
+      // Admin Panel Actions
+      if (state.view === 'admin') {
+          if(target.closest('#generate-report-btn')) {
+            const start = new Date(state.startDate);
+            const end = new Date(state.endDate);
+            end.setHours(23, 59, 59, 999);
             const filteredSales = salesHistory.filter(sale => {
                 const saleDate = new Date(sale.date);
                 return saleDate >= start && saleDate <= end;
             });
-
             const productSales = new Map<number, number>();
             filteredSales.forEach(sale => {
                 const currentQty = productSales.get(sale.productId) || 0;
                 productSales.set(sale.productId, currentQty + sale.quantity);
             });
-            
             const reportData = Array.from(productSales.entries()).map(([productId, totalQuantity]) => {
-                    const product = getProducts().find(p => p.id === productId);
+                    const product = state.products.find(p => p.id === productId);
                     return { productId, name: product!.name, totalQuantity };
-                })
-                .sort((a, b) => b.totalQuantity - a.totalQuantity);
+                }).sort((a, b) => b.totalQuantity - a.totalQuantity);
+            setState({ salesReport: reportData });
+            return;
+          }
 
-            setSalesReport(reportData);
-        });
-        
-        // Product Management
-        const productForm = document.getElementById('product-form') as HTMLFormElement;
-        const productFormReset = () => {
-            productForm.reset();
-            setEditingProduct(null);
-            setNewProductImage(null);
-        };
+          if (target.closest('#cancel-edit-product-btn')) {
+            (document.getElementById('product-form') as HTMLFormElement).reset();
+            setState({ editingProduct: null, newProductImage: null }); return;
+          }
+          if (target.closest('#cancel-edit-news-btn')) {
+            (document.getElementById('news-form') as HTMLFormElement).reset();
+            setState({ editingNewsItem: null }); return;
+          }
+          if (target.closest('#cancel-edit-promo-btn')) {
+            (document.getElementById('promo-form') as HTMLFormElement).reset();
+            setState({ editingPromotion: null }); return;
+          }
 
-        document.getElementById('product-image-upload')?.addEventListener('change', async (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (file) {
-                const base64 = await fileToBase64(file) as string;
-                setNewProductImage(base64);
-            }
-        });
-        
-        document.getElementById('cancel-edit-product-btn')?.addEventListener('click', productFormReset);
+          if(target.closest('.translate-btn')) {
+              const field = target.closest<HTMLElement>('.translate-btn')!.dataset.field as 'name' | 'description';
+              if (field) handleTranslate(field); return;
+          }
 
-        productForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const editingProduct = getEditingProduct();
-            const categoryKey = (document.getElementById('product-category') as HTMLSelectElement).value;
-            const categoryObj = categories.find(c => c.key === categoryKey);
-            if (!categoryObj) return;
-
-            const productData = {
-                name: {
-                    en: (document.getElementById('product-name-en') as HTMLInputElement).value,
-                    sr: (document.getElementById('product-name-sr') as HTMLInputElement).value,
-                    ru: (document.getElementById('product-name-ru') as HTMLInputElement).value,
-                },
-                description: {
-                    en: (document.getElementById('product-desc-en') as HTMLTextAreaElement).value,
-                    sr: (document.getElementById('product-desc-sr') as HTMLTextAreaElement).value,
-                    ru: (document.getElementById('product-desc-ru') as HTMLTextAreaElement).value,
-                },
-                price: parseFloat((document.getElementById('product-price') as HTMLInputElement).value),
-                image: getNewProductImage() || (editingProduct ? editingProduct.image : 'https://placehold.co/300x300?text=No+Image'),
-                category: categoryObj.name
-            };
-
-            if (editingProduct) {
-                // Update existing product
-                const updatedProducts = getProducts().map(p => 
-                    p.id === editingProduct.id ? { ...p, ...productData } : p
-                );
-                setProducts(updatedProducts);
+          if(target.closest('#voice-control-btn')) {
+            if (!recognition) return;
+            if (state.isListening) {
+                recognition.stop();
             } else {
-                // Add new product
-                const newProduct: Product = { id: Date.now(), ...productData };
-                setProducts([newProduct, ...getProducts()]);
+                const lang = state.language;
+                recognition.lang = lang === 'sr' ? 'sr-RS' : lang === 'ru' ? 'ru-RU' : 'en-US';
+                recognition.start();
             }
-            
-            productFormReset();
-        });
+            return;
+          }
 
-        document.querySelectorAll('.translate-btn').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const field = (e.currentTarget as HTMLElement).dataset.field as 'name' | 'description';
-                if (field) {
-                    handleTranslate(field);
-                }
-            });
-        });
+          const actionButton = target.closest<HTMLElement>('.edit-btn, .delete-btn, .approve-btn, .reject-btn');
+          if (actionButton) {
+              const type = actionButton.dataset.type;
+              const id = parseInt(actionButton.dataset.id!, 10);
+              const isEdit = actionButton.classList.contains('edit-btn');
+              const isApprove = actionButton.classList.contains('approve-btn');
 
-        // News Management
-        const newsForm = document.getElementById('news-form') as HTMLFormElement;
-        const newsFormReset = () => {
-            newsForm.reset();
-            setEditingNewsItem(null);
-        };
-
-        document.getElementById('cancel-edit-news-btn')?.addEventListener('click', newsFormReset);
-
-        newsForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const editingNewsItem = getEditingNewsItem();
-            const newsData = {
-                date: (document.getElementById('news-date') as HTMLInputElement).value,
-                title: {
-                    en: (document.getElementById('news-title-en') as HTMLInputElement).value,
-                    sr: (document.getElementById('news-title-sr') as HTMLInputElement).value,
-                    ru: (document.getElementById('news-title-ru') as HTMLInputElement).value,
-                },
-                content: {
-                    en: (document.getElementById('news-content-en') as HTMLTextAreaElement).value,
-                    sr: (document.getElementById('news-content-sr') as HTMLTextAreaElement).value,
-                    ru: (document.getElementById('news-content-ru') as HTMLTextAreaElement).value,
-                }
-            };
-
-            if (editingNewsItem) {
-                const updatedNews = getNewsItems().map(item =>
-                    item.id === editingNewsItem.id ? { ...item, ...newsData } : item
-                );
-                setNewsItems(updatedNews);
-            } else {
-                const newNewsItem: NewsItem = { id: Date.now(), ...newsData };
-                setNewsItems([newNewsItem, ...getNewsItems()]);
-            }
-            newsFormReset();
-        });
-        
-        // Promotions Management
-        const promoForm = document.getElementById('promo-form') as HTMLFormElement;
-        const promoFormReset = () => {
-            promoForm.reset();
-            setEditingPromotion(null);
-        };
-        
-        document.getElementById('cancel-edit-promo-btn')?.addEventListener('click', promoFormReset);
-
-        promoForm?.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const editingPromotion = getEditingPromotion();
-            const promoData = {
-                title: {
-                    en: (document.getElementById('promo-title-en') as HTMLInputElement).value,
-                    sr: (document.getElementById('promo-title-sr') as HTMLInputElement).value,
-                    ru: (document.getElementById('promo-title-ru') as HTMLInputElement).value,
-                },
-                content: {
-                    en: (document.getElementById('promo-content-en') as HTMLTextAreaElement).value,
-                    sr: (document.getElementById('promo-content-sr') as HTMLTextAreaElement).value,
-                    ru: (document.getElementById('promo-content-ru') as HTMLTextAreaElement).value,
-                }
-            };
-
-            if (editingPromotion) {
-                const updatedPromos = getPromotions().map(item =>
-                    item.id === editingPromotion.id ? { ...item, ...promoData } : item
-                );
-                setPromotions(updatedPromos);
-            } else {
-                 const newPromotion: Promotion = { id: Date.now(), ...promoData };
-                 setPromotions([newPromotion, ...getPromotions()]);
-            }
-            promoFormReset();
-        });
-        
-        // Action Buttons in Lists (Edit/Delete/Approve/Reject)
-        document.querySelectorAll('.edit-btn, .delete-btn, .approve-btn, .reject-btn').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const target = e.currentTarget as HTMLElement;
-                const type = target.dataset.type;
-                const id = parseInt(target.dataset.id!, 10);
-                const isEdit = target.classList.contains('edit-btn');
-                const isApprove = target.classList.contains('approve-btn');
-
-                if (type === 'review') {
-                    // FIX: Explicitly define the type of newStatus to match the Review['status'] union type.
-                    const newStatus: 'approved' | 'rejected' = isApprove ? 'approved' : 'rejected';
-                    const updatedReviews = getReviews().map(r => r.id === id ? {...r, status: newStatus} : r);
-                    setReviews(updatedReviews);
-                } else if (type === 'news') {
-                    if (isEdit) {
-                        const itemToEdit = getNewsItems().find(item => item.id === id);
-                        if (itemToEdit) {
-                            setEditingNewsItem(itemToEdit);
+              if (type === 'review') {
+                  const newStatus: 'approved' | 'rejected' = isApprove ? 'approved' : 'rejected';
+                  setState({ reviews: state.reviews.map(r => r.id === id ? {...r, status: newStatus} : r) });
+              } else if (type === 'news') {
+                  if (isEdit) {
+                      const itemToEdit = state.newsItems.find(item => item.id === id);
+                      if (itemToEdit) {
+                          setState({ editingNewsItem: itemToEdit });
+                          const form = document.getElementById('news-form');
+                          if (form) {
                             (document.getElementById('news-date') as HTMLInputElement).value = itemToEdit.date;
                             (document.getElementById('news-title-en') as HTMLInputElement).value = itemToEdit.title.en;
                             (document.getElementById('news-title-sr') as HTMLInputElement).value = itemToEdit.title.sr;
@@ -1856,34 +1639,38 @@ const App = () => {
                             (document.getElementById('news-content-en') as HTMLTextAreaElement).value = itemToEdit.content.en;
                             (document.getElementById('news-content-sr') as HTMLTextAreaElement).value = itemToEdit.content.sr;
                             (document.getElementById('news-content-ru') as HTMLTextAreaElement).value = itemToEdit.content.ru;
-                            newsForm.scrollIntoView({ behavior: 'smooth' });
-                        }
-                    } else {
-                        setNewsItems(getNewsItems().filter(item => item.id !== id));
-                    }
-                } else if (type === 'promo') {
-                    if (isEdit) {
-                         const itemToEdit = getPromotions().find(item => item.id === id);
-                         if (itemToEdit) {
-                            setEditingPromotion(itemToEdit);
+                            form.scrollIntoView({ behavior: 'smooth' });
+                          }
+                      }
+                  } else {
+                      setState({ newsItems: state.newsItems.filter(item => item.id !== id) });
+                  }
+              } else if (type === 'promo') {
+                  if (isEdit) {
+                        const itemToEdit = state.promotions.find(item => item.id === id);
+                        if (itemToEdit) {
+                          setState({ editingPromotion: itemToEdit });
+                          const form = document.getElementById('promo-form');
+                          if (form) {
                             (document.getElementById('promo-title-en') as HTMLInputElement).value = itemToEdit.title.en;
                             (document.getElementById('promo-title-sr') as HTMLInputElement).value = itemToEdit.title.sr;
                             (document.getElementById('promo-title-ru') as HTMLInputElement).value = itemToEdit.title.ru;
                             (document.getElementById('promo-content-en') as HTMLTextAreaElement).value = itemToEdit.content.en;
                             (document.getElementById('promo-content-sr') as HTMLTextAreaElement).value = itemToEdit.content.sr;
                             (document.getElementById('promo-content-ru') as HTMLTextAreaElement).value = itemToEdit.content.ru;
-                            promoForm.scrollIntoView({ behavior: 'smooth' });
-                         }
-                    } else {
-                        setPromotions(getPromotions().filter(item => item.id !== id));
-                    }
-                } else if (type === 'product') {
-                    if (isEdit) {
-                        const productToEdit = getProducts().find(p => p.id === id);
-                        if (productToEdit) {
-                            setEditingProduct(productToEdit);
-                            setNewProductImage(productToEdit.image); // set preview
-                            // Populate form
+                            form.scrollIntoView({ behavior: 'smooth' });
+                          }
+                        }
+                  } else {
+                      setState({ promotions: state.promotions.filter(item => item.id !== id) });
+                  }
+              } else if (type === 'product') {
+                  if (isEdit) {
+                      const productToEdit = state.products.find(p => p.id === id);
+                      if (productToEdit) {
+                          setState({ editingProduct: productToEdit, newProductImage: productToEdit.image });
+                          const form = document.getElementById('product-form');
+                          if(form) {
                             (document.getElementById('product-name-en') as HTMLInputElement).value = productToEdit.name.en;
                             (document.getElementById('product-name-sr') as HTMLInputElement).value = productToEdit.name.sr;
                             (document.getElementById('product-name-ru') as HTMLInputElement).value = productToEdit.name.ru;
@@ -1891,29 +1678,202 @@ const App = () => {
                             (document.getElementById('product-desc-sr') as HTMLTextAreaElement).value = productToEdit.description.sr;
                             (document.getElementById('product-desc-ru') as HTMLTextAreaElement).value = productToEdit.description.ru;
                             (document.getElementById('product-price') as HTMLInputElement).value = productToEdit.price.toString();
-                            const categoryKey = Object.keys(categories[0].name).find(lang => productToEdit.category[lang as Language] !== undefined);
-                            const category = categories.find(c => c.name[categoryKey as Language] === productToEdit.category[categoryKey as Language]);
+                            const category = categories.find(c => c.name.en === productToEdit.category.en);
                             if(category) (document.getElementById('product-category') as HTMLSelectElement).value = category.key;
-
-                            productForm.scrollIntoView({ behavior: 'smooth' });
-                        }
-                    } else { // Is Delete
-                        setProducts(getProducts().filter(p => p.id !== id));
-                    }
-                }
-            });
-        });
-
+                            form.scrollIntoView({ behavior: 'smooth' });
+                          }
+                      }
+                  } else {
+                      setState({ products: state.products.filter(p => p.id !== id) });
+                  }
+              }
+              return;
+          }
+      }
+  });
+  
+  // Attach event listeners for elements that can't be handled by delegation
+  const attachDynamicEventListeners = () => {
+    // Language selector
+    const langSelect = document.getElementById('lang-select') as HTMLSelectElement;
+    if (langSelect) {
+      langSelect.onchange = () => setState({ language: langSelect.value as Language });
     }
-    initializeLazyLoad();
+
+    // Review Form
+    const reviewForm = document.getElementById('review-form') as HTMLFormElement;
+    if (reviewForm) {
+      reviewForm.onsubmit = (e) => {
+        e.preventDefault();
+        const product = state.activeProductReviews;
+        if(!product) return;
+        const rating = parseInt((reviewForm.querySelector('input[name="rating"]:checked') as HTMLInputElement)?.value, 10);
+        const title = (document.getElementById('review-title') as HTMLInputElement).value;
+        const content = (document.getElementById('review-content') as HTMLTextAreaElement).value;
+        const newReview: Review = {
+            id: Date.now(),
+            productId: product.id,
+            author: "User", rating,
+            title: { en: title, sr: title, ru: title },
+            content: { en: content, sr: content, ru: content },
+            status: 'pending'
+        };
+        setState({ reviews: [newReview, ...state.reviews], activeProductReviews: null });
+        alert(t('reviewSubmitted'));
+      };
+    }
+
+    // Profile Edit Form
+    const profileForm = document.getElementById('profile-form') as HTMLFormElement;
+    if(profileForm) {
+        profileForm.onsubmit = (e) => {
+            e.preventDefault();
+            const newName = (document.getElementById('profile-name') as HTMLInputElement).value;
+            const newEmail = (document.getElementById('profile-email') as HTMLInputElement).value;
+            setState({
+                userProfile: { ...state.userProfile, name: newName, email: newEmail },
+                isEditingProfile: false
+            });
+        };
+    }
+
+    // Admin Panel Forms & Inputs
+    if(state.view === 'admin') {
+      document.getElementById('logo-upload')?.addEventListener('change', async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) setState({ logoUrl: await fileToBase64(file) as string });
+      });
+      document.getElementById('banner-upload')?.addEventListener('change', async (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0];
+        if (file) setState({ bannerUrl: await fileToBase64(file) as string });
+      });
+
+      const orderStatusNotifForm = document.getElementById('order-status-notif-form') as HTMLFormElement;
+      if(orderStatusNotifForm) {
+        orderStatusNotifForm.onsubmit = (e) => {
+          e.preventDefault();
+          const newSettings: OrderStatusNotificationSettings = {};
+          Object.keys(state.orderStatusNotifSettings).forEach(statusKey => {
+              newSettings[statusKey] = {
+                  enabled: (document.getElementById(`notif-enabled-${statusKey}`) as HTMLInputElement).checked,
+                  templates: {
+                      en: (document.getElementById(`notif-template-${statusKey}-en`) as HTMLTextAreaElement).value,
+                      sr: (document.getElementById(`notif-template-${statusKey}-sr`) as HTMLTextAreaElement).value,
+                      ru: (document.getElementById(`notif-template-${statusKey}-ru`) as HTMLTextAreaElement).value,
+                  }
+              };
+          });
+          setState({ orderStatusNotifSettings: newSettings });
+          alert('Notification settings saved!');
+        };
+      }
+      
+      const promoNotifForm = document.getElementById('promo-notif-form') as HTMLFormElement;
+      if (promoNotifForm) {
+        promoNotifForm.onsubmit = (e) => {
+          e.preventDefault();
+          if(confirm(t('confirmSend'))) {
+              const newPromo: PromotionalNotification = {
+                  id: Date.now(),
+                  date: new Date().toISOString().split('T')[0],
+                  title: {
+                      en: (document.getElementById('promo-notif-title-en') as HTMLInputElement).value,
+                      sr: (document.getElementById('promo-notif-title-sr') as HTMLInputElement).value,
+                      ru: (document.getElementById('promo-notif-title-ru') as HTMLInputElement).value,
+                  },
+                  content: {
+                      en: (document.getElementById('promo-notif-content-en') as HTMLTextAreaElement).value,
+                      sr: (document.getElementById('promo-notif-content-sr') as HTMLTextAreaElement).value,
+                      ru: (document.getElementById('promo-notif-content-ru') as HTMLTextAreaElement).value,
+                  }
+              };
+              setState({ promoNotifHistory: [newPromo, ...state.promoNotifHistory] });
+              promoNotifForm.reset();
+              alert(t('notificationSentSuccess'));
+          }
+        };
+      }
+
+      const productForm = document.getElementById('product-form') as HTMLFormElement;
+      if(productForm) {
+        (document.getElementById('product-image-upload') as HTMLInputElement).onchange = async (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0];
+          if (file) setState({ newProductImage: await fileToBase64(file) as string });
+        };
+        productForm.onsubmit = (e) => {
+          e.preventDefault();
+          const editingProduct = state.editingProduct;
+          const categoryKey = (document.getElementById('product-category') as HTMLSelectElement).value;
+          const categoryObj = categories.find(c => c.key === categoryKey);
+          if (!categoryObj) return;
+
+          const productData = {
+              name: { en: (document.getElementById('product-name-en') as HTMLInputElement).value, sr: (document.getElementById('product-name-sr') as HTMLInputElement).value, ru: (document.getElementById('product-name-ru') as HTMLInputElement).value },
+              description: { en: (document.getElementById('product-desc-en') as HTMLTextAreaElement).value, sr: (document.getElementById('product-desc-sr') as HTMLTextAreaElement).value, ru: (document.getElementById('product-desc-ru') as HTMLTextAreaElement).value },
+              price: parseFloat((document.getElementById('product-price') as HTMLInputElement).value),
+              image: state.newProductImage || (editingProduct ? editingProduct.image : 'https://placehold.co/300x300?text=No+Image'),
+              category: categoryObj.name
+          };
+
+          if (editingProduct) {
+              setState({ products: state.products.map(p => p.id === editingProduct.id ? { ...p, ...productData } : p) });
+          } else {
+              setState({ products: [{ id: Date.now(), ...productData }, ...state.products] });
+          }
+          productForm.reset();
+          setState({ editingProduct: null, newProductImage: null });
+        };
+      }
+      
+      const newsForm = document.getElementById('news-form') as HTMLFormElement;
+      if (newsForm) {
+        newsForm.onsubmit = (e) => {
+            e.preventDefault();
+            const editingNewsItem = state.editingNewsItem;
+            const newsData = {
+                date: (document.getElementById('news-date') as HTMLInputElement).value,
+                title: { en: (document.getElementById('news-title-en') as HTMLInputElement).value, sr: (document.getElementById('news-title-sr') as HTMLInputElement).value, ru: (document.getElementById('news-title-ru') as HTMLInputElement).value },
+                content: { en: (document.getElementById('news-content-en') as HTMLTextAreaElement).value, sr: (document.getElementById('news-content-sr') as HTMLTextAreaElement).value, ru: (document.getElementById('news-content-ru') as HTMLTextAreaElement).value }
+            };
+
+            if (editingNewsItem) {
+                setState({ newsItems: state.newsItems.map(item => item.id === editingNewsItem.id ? { ...item, ...newsData } : item) });
+            } else {
+                setState({ newsItems: [{ id: Date.now(), ...newsData }, ...state.newsItems] });
+            }
+            newsForm.reset();
+            setState({ editingNewsItem: null });
+        };
+      }
+      
+      const promoForm = document.getElementById('promo-form') as HTMLFormElement;
+      if (promoForm) {
+        promoForm.onsubmit = (e) => {
+            e.preventDefault();
+            const editingPromotion = state.editingPromotion;
+            const promoData = {
+                title: { en: (document.getElementById('promo-title-en') as HTMLInputElement).value, sr: (document.getElementById('promo-title-sr') as HTMLInputElement).value, ru: (document.getElementById('promo-title-ru') as HTMLInputElement).value },
+                content: { en: (document.getElementById('promo-content-en') as HTMLTextAreaElement).value, sr: (document.getElementById('promo-content-sr') as HTMLTextAreaElement).value, ru: (document.getElementById('promo-content-ru') as HTMLTextAreaElement).value }
+            };
+            if (editingPromotion) {
+                setState({ promotions: state.promotions.map(item => item.id === editingPromotion.id ? { ...item, ...promoData } : item) });
+            } else {
+                setState({ promotions: [{ id: Date.now(), ...promoData }, ...state.promotions] });
+            }
+            promoForm.reset();
+            setState({ editingPromotion: null });
+        };
+      }
+      
+      document.getElementById('start-date')?.addEventListener('change', e => setState({ startDate: (e.target as HTMLInputElement).value }));
+      document.getElementById('end-date')?.addEventListener('change', e => setState({ endDate: (e.target as HTMLInputElement).value }));
+    }
   };
 
-  const render = () => {
-    const root = document.getElementById('root');
-    if (!root) return;
-
+  // FIX: Converted `render` to a function declaration. This hoists it, making it available to `setState` which is defined earlier in the component's scope.
+  function render() {
     let pageContent = '';
-    switch(getView()) {
+    switch(state.view) {
         case 'home': pageContent = renderHomePage(); break;
         case 'catalog': pageContent = renderCatalogPage(); break;
         case 'cart': pageContent = renderCartPage(); break;
@@ -1923,46 +1883,22 @@ const App = () => {
         case 'admin': pageContent = renderAdminPage(); break;
     }
 
-    const modal = getActiveProductReviews() ? renderProductReviewsModal() : '';
+    const modal = state.activeProductReviews ? renderProductReviewsModal() : '';
 
-    root.innerHTML = `
+    rootElement.innerHTML = `
       ${renderHeader()}
       <main>${pageContent}</main>
       ${renderFooterNav()}
       ${modal}
     `;
 
-    attachEventListeners();
-  };
+    attachDynamicEventListeners();
+    initializeLazyLoad();
+  }
 
-  (setCart as any).subscribe(render);
-  (setView as any).subscribe(render);
-  (setLanguage as any).subscribe(render);
-  (setRole as any).subscribe(render);
-  (setSelectedCategory as any).subscribe(render);
-  (setSalesReport as any).subscribe(render);
-  (setProducts as any).subscribe(render);
-  (setNewsItems as any).subscribe(render);
-  (setPromotions as any).subscribe(render);
-  (setReviews as any).subscribe(render);
-  (setLogoUrl as any).subscribe(render);
-  (setBannerUrl as any).subscribe(render);
-  (setActiveProductReviews as any).subscribe(render);
-  (setEditingProduct as any).subscribe(render);
-  (setNewProductImage as any).subscribe(render);
-  (setEditingNewsItem as any).subscribe(render);
-  (setEditingPromotion as any).subscribe(render);
-  (setIsListening as any).subscribe(render);
-  (setVoiceFeedback as any).subscribe(render);
-  (setIsTranslatingName as any).subscribe(render);
-  (setIsTranslatingDesc as any).subscribe(render);
-  (setOrderStatusNotifSettings as any).subscribe(render);
-  (setPromoNotifHistory as any).subscribe(render);
-  
-  // Initial render on app load
+  // --- INITIAL RENDER ---
   if (window.Telegram?.WebApp?.initDataUnsafe?.start_param === 'BelaZoraAdmin2024') {
-    setRole('admin');
-    setView('admin');
+    setState({ role: 'admin', view: 'admin' });
   } else {
     render();
   }
