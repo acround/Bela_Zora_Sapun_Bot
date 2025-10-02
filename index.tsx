@@ -489,11 +489,17 @@ function createSignal<T>(value: T): [() => T, (newValue: T) => void] {
   const subscribers = new Set<() => void>();
   const getter = () => internalValue;
   const setter = (newValue: T) => {
-    // The JSON.stringify check doesn't work for Map objects.
-    // We'll bypass the check for Maps and perform it for other types.
-    if (!(internalValue instanceof Map) && JSON.stringify(internalValue) === JSON.stringify(newValue)) {
-        return;
+    // A simple JSON.stringify check is used to prevent re-renders on identical data.
+    // However, this check incorrectly processes Map objects (always returning '{}'),
+    // which was preventing cart updates. This revised logic bypasses the check
+    // entirely if either the old or new value is a Map, ensuring the state update
+    // and subsequent re-render always occur for the cart.
+    if (internalValue instanceof Map || newValue instanceof Map) {
+        // Always update if dealing with a Map, as stringify comparison is unreliable.
+    } else if (JSON.stringify(internalValue) === JSON.stringify(newValue)) {
+        return; // For other types, if they're identical, do nothing.
     }
+    
     internalValue = newValue;
     subscribers.forEach(cb => cb());
   };
