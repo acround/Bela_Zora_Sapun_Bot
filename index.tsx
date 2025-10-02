@@ -1544,7 +1544,7 @@ const App = () => {
 
             // !!! IMPORTANT !!!
             // Replace this URL with the URL of your deployed Python backend from Render.com
-            const backendUrl = 'https://bela-zora-bot.onrender.com/process-order'; 
+            const backendUrl = 'https://bela-zora-sapun-bot.onrender.com/process-order'; 
 
             try {
                 checkoutBtn.disabled = true;
