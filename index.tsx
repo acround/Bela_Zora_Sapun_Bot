@@ -489,7 +489,11 @@ function createSignal<T>(value: T): [() => T, (newValue: T) => void] {
   const subscribers = new Set<() => void>();
   const getter = () => internalValue;
   const setter = (newValue: T) => {
-    if (JSON.stringify(internalValue) === JSON.stringify(newValue)) return;
+    // The JSON.stringify check doesn't work for Map objects.
+    // We'll bypass the check for Maps and perform it for other types.
+    if (!(internalValue instanceof Map) && JSON.stringify(internalValue) === JSON.stringify(newValue)) {
+        return;
+    }
     internalValue = newValue;
     subscribers.forEach(cb => cb());
   };
