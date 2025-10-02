@@ -573,9 +573,13 @@ const App = () => {
   });
   const [getPromoNotifHistory, setPromoNotifHistory] = createSignal<PromotionalNotification[]>([]);
 
-  // App Initialization: Check for admin access via Telegram start parameter
-  if (window.Telegram?.WebApp?.initDataUnsafe?.start_param === 'BelaZoraAdmin2024') {
-    setRole('admin');
+  // --- App Initialization ---
+  if (window.Telegram?.WebApp) {
+      // Signal to the Telegram client that the app is ready.
+      // This is crucial for ensuring the webview is interactive and can prevent issues with event listeners.
+      window.Telegram.WebApp.ready();
+      // Expand the app to its full height for a better user experience.
+      window.Telegram.WebApp.expand();
   }
 
   // Gemini API initialization
