@@ -72,6 +72,8 @@ const translations = {
     imageLabel: "Product Image",
     chooseFile: "Choose a file...",
     categoryLabel: "Category",
+    manageCategories: "Manage Categories",
+    addCategory: "Add Category",
     pieces: "pcs.",
     edit: "Edit",
     updateProduct: "Update Product",
@@ -174,6 +176,8 @@ const translations = {
     imageLabel: "Слика производа",
     chooseFile: "Изаберите датотеку...",
     categoryLabel: "Категорија",
+    manageCategories: "Управљање категоријама",
+    addCategory: "Додај категорију",
     pieces: "ком.",
     edit: "Измени",
     updateProduct: "Ажурирај производ",
@@ -276,6 +280,8 @@ const translations = {
     imageLabel: "Изображение товара",
     chooseFile: "Выберите файл...",
     categoryLabel: "Категория",
+    manageCategories: "Управление категориями",
+    addCategory: "Добавить категорию",
     pieces: "шт.",
     edit: "Изменить",
     updateProduct: "Обновить товар",
@@ -372,19 +378,15 @@ interface UserProfile {
     email: string;
     orderHistory: { id: string; date: string; total: number }[];
 }
+interface Category {
+    key: string;
+    name: { [key in Language]: string };
+}
 
 // FIX: Removed redundant global `translateText` function and `click`/`submit` event listeners.
 // These were causing scope errors as they tried to access `ai` and `setState` from outside the `App` component.
 // The functionality is already correctly implemented inside the `App` component's event listeners and handlers,
 // which also use the correct, up-to-date Gemini API.
-
-const categories: { key: string; name: { [key in Language]: string } }[] = [
-    { key: 'All', name: { en: 'All', sr: 'Све', ru: 'Все' } },
-    { key: 'Classic', name: { en: 'Classic', sr: 'Класични', ru: 'Классика' } },
-    { key: 'Herbal', name: { en: 'Herbal', sr: 'Биљни', ru: 'Травы' } },
-    { key: 'Exfoliating', name: { en: 'Exfoliating', sr: 'Пилинг', ru: 'Пилинг' } },
-    { key: 'Detox', name: { en: 'Detox', sr: 'Детокс', ru: 'Детокс' } },
-];
 
 const initialProducts: Product[] = [
   {
@@ -520,6 +522,7 @@ interface AppState {
     selectedCategory: string;
     cart: Cart;
     products: Product[];
+    categories: Category[];
     newsItems: NewsItem[];
     promotions: Promotion[];
     reviews: Review[];
@@ -551,6 +554,13 @@ const state: AppState = {
     selectedCategory: 'All',
     cart: {},
     products: initialProducts,
+    categories: [
+        { key: 'All', name: { en: 'All', sr: 'Све', ru: 'Все' } },
+        { key: 'Classic', name: { en: 'Classic', sr: 'Класични', ru: 'Классика' } },
+        { key: 'Herbal', name: { en: 'Herbal', sr: 'Биљни', ru: 'Травы' } },
+        { key: 'Exfoliating', name: { en: 'Exfoliating', sr: 'Пилинг', ru: 'Пилинг' } },
+        { key: 'Detox', name: { en: 'Detox', sr: 'Детокс', ru: 'Детокс' } },
+    ],
     newsItems: initialNewsItems,
     promotions: initialPromotions,
     reviews: initialReviews,
@@ -581,7 +591,7 @@ const state: AppState = {
 // Define which keys are persisted to localStorage.
 const persistedKeys = new Set<keyof AppState>([
     'products', 'newsItems', 'promotions', 'reviews', 'logoUrl', 'bannerUrl', 
-    'orderStatusNotifSettings', 'promoNotifHistory', 'userProfile', 'cart'
+    'orderStatusNotifSettings', 'promoNotifHistory', 'userProfile', 'cart', 'categories'
 ]);
 
 // Load persisted state from localStorage on startup.
@@ -804,7 +814,7 @@ const App = () => {
     
     const categoryFilters = `
         <div class="category-filters">
-            ${categories.map(cat => `
+            ${state.categories.map(cat => `
                 <button class="category-btn ${state.selectedCategory === cat.key ? 'active' : ''}" data-category="${cat.key}">
                     ${cat.name[lang]}
                 </button>
@@ -987,7 +997,8 @@ const App = () => {
       const { 
           salesReport, products, newsItems, promotions, reviews, editingProduct, 
           newProductImage, editingNewsItem, editingPromotion, orderStatusNotifSettings, 
-          promoNotifHistory, isListening, voiceFeedback, isTranslatingName, isTranslatingDesc
+          promoNotifHistory, isListening, voiceFeedback, isTranslatingName, isTranslatingDesc,
+          categories
       } = state;
       
       const renderReport = () => {
@@ -1130,6 +1141,32 @@ const App = () => {
             ` : `<p>${t('noReviews')} ${t('pendingReviews').toLowerCase()}.</p>`}
         </div>
 
+        <!-- Category Management -->
+        <div class="admin-section" id="admin-categories-section">
+            <h3>${t('manageCategories')}</h3>
+            <form id="category-form" class="admin-form">
+                <div class="form-group-i18n">
+                    <label>${t('nameLabel')}</label>
+                    <input type="text" id="category-name-en" placeholder="${t('nameLabel')} (EN)" required>
+                    <input type="text" id="category-name-sr" placeholder="${t('nameLabel')} (SR)" required>
+                    <input type="text" id="category-name-ru" placeholder="${t('nameLabel')} (RU)" required>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="admin-button">${t('addCategory')}</button>
+                </div>
+            </form>
+            <ul class="manage-list" id="category-list">
+                ${categories.filter(cat => cat.key !== 'All').map(cat => `
+                    <li class="manage-list-item">
+                        <span>${cat.name[lang]}</span>
+                        <div class="manage-list-item-actions">
+                            <button class="delete-btn" data-key="${cat.key}" data-type="category">${t('delete')}</button>
+                        </div>
+                    </li>
+                `).join('')}
+            </ul>
+        </div>
+        
         <!-- Product Management -->
         <div class="admin-section" id="admin-products-section">
             <h3>${t('manageProducts')}</h3>
@@ -1567,7 +1604,7 @@ const App = () => {
                 try {
                     checkoutBtn.disabled = true;
                     checkoutBtn.textContent = t('processing');
-                    console.log({ window.Telegram.WebApp.initData, orderData });
+                    console.log({ "initData": window.Telegram.WebApp.initData, orderData });
                     const response = await fetch(backendUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1644,6 +1681,26 @@ const App = () => {
           const actionButton = target.closest<HTMLElement>('.edit-btn, .delete-btn, .approve-btn, .reject-btn');
           if (actionButton) {
               const type = actionButton.dataset.type;
+              
+              if (type === 'category') {
+                  const keyToDelete = actionButton.dataset.key!;
+                  if (keyToDelete) {
+                      const categoryToDelete = state.categories.find(c => c.key === keyToDelete);
+                      if (!categoryToDelete) return;
+
+                      const isUsed = state.products.some(p => p.category.en === categoryToDelete.name.en);
+                      if (isUsed) {
+                          alert("Cannot delete category as it's currently used by products.");
+                          return;
+                      }
+
+                      if (confirm(`Are you sure you want to delete the category "${categoryToDelete.name[state.language]}"?`)) {
+                          setState({ categories: state.categories.filter(c => c.key !== keyToDelete) });
+                      }
+                  }
+                  return;
+              }
+
               const id = parseInt(actionButton.dataset.id!, 10);
               const isEdit = actionButton.classList.contains('edit-btn');
               const isApprove = actionButton.classList.contains('approve-btn');
@@ -1704,7 +1761,7 @@ const App = () => {
                             (document.getElementById('product-desc-sr') as HTMLTextAreaElement).value = productToEdit.description.sr;
                             (document.getElementById('product-desc-ru') as HTMLTextAreaElement).value = productToEdit.description.ru;
                             (document.getElementById('product-price') as HTMLInputElement).value = productToEdit.price.toString();
-                            const category = categories.find(c => c.name.en === productToEdit.category.en);
+                            const category = state.categories.find(c => c.name.en === productToEdit.category.en);
                             if(category) (document.getElementById('product-category') as HTMLSelectElement).value = category.key;
                             form.scrollIntoView({ behavior: 'smooth' });
                           }
@@ -1820,6 +1877,37 @@ const App = () => {
         };
       }
 
+      const categoryForm = document.getElementById('category-form') as HTMLFormElement;
+      if (categoryForm) {
+        categoryForm.onsubmit = (e) => {
+            e.preventDefault();
+            const nameEn = (document.getElementById('category-name-en') as HTMLInputElement).value.trim();
+            const newKey = nameEn.replace(/\s+/g, '-').toLowerCase();
+
+            if (!nameEn) {
+                alert('English name is required to create a category key.');
+                return;
+            }
+
+            if (state.categories.some(c => c.key === newKey)) {
+                alert(`A category with the key "${newKey}" already exists.`);
+                return;
+            }
+
+            const newCategory: Category = {
+                key: newKey,
+                name: {
+                    en: nameEn,
+                    sr: (document.getElementById('category-name-sr') as HTMLInputElement).value.trim(),
+                    ru: (document.getElementById('category-name-ru') as HTMLInputElement).value.trim(),
+                }
+            };
+
+            setState({ categories: [...state.categories, newCategory] });
+            categoryForm.reset();
+        };
+      }
+      
       const productForm = document.getElementById('product-form') as HTMLFormElement;
       if(productForm) {
         (document.getElementById('product-image-upload') as HTMLInputElement).onchange = async (e) => {
@@ -1830,7 +1918,7 @@ const App = () => {
           e.preventDefault();
           const editingProduct = state.editingProduct;
           const categoryKey = (document.getElementById('product-category') as HTMLSelectElement).value;
-          const categoryObj = categories.find(c => c.key === categoryKey);
+          const categoryObj = state.categories.find(c => c.key === categoryKey);
           if (!categoryObj) return;
 
           const productData = {
