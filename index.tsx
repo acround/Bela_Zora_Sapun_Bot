@@ -26,6 +26,7 @@ const translations = {
     navProfile: "Profile",
     navAdmin: "Admin",
     addToCart: "Add to Cart",
+    inCart: "In Cart",
     cartTitle: "Your Shopping Cart",
     emptyCartHeader: "Your Cart is Empty",
     emptyCartMessage: "Looks like you haven't added any soap yet.",
@@ -127,6 +128,7 @@ const translations = {
     navProfile: "Профил",
     navAdmin: "Админ",
     addToCart: "Додај у корпу",
+    inCart: "У корпи",
     cartTitle: "Ваша корпа",
     emptyCartHeader: "Ваша корпа је празна",
     emptyCartMessage: "Изгледа да још нисте додали ниједан сапун.",
@@ -228,6 +230,7 @@ const translations = {
     navProfile: "Профиль",
     navAdmin: "Админ",
     addToCart: "В корзину",
+    inCart: "В корзине",
     cartTitle: "Ваша корзина",
     emptyCartHeader: "Ваша корзина пуста",
     emptyCartMessage: "Похоже, вы еще не добавили мыло.",
@@ -370,59 +373,10 @@ interface UserProfile {
     orderHistory: { id: string; date: string; total: number }[];
 }
 
-const translateText = async (text: string, to: 'sr' | 'ru') => {
-  const model = ai.getGenerativeModel({ model: 'gemini-pro' });
-  const prompt = `Translate this English text to ${to === 'sr' ? 'Serbian' : 'Russian'}:\n"${text}"`;
-  const result = await model.generateContent(prompt);
-  return result.response.text();
-};
-
-document.addEventListener('click', async (e) => {
-  const target = e.target as HTMLElement;
-  if (target.classList.contains('translate-btn')) {
-    const field = target.dataset.field as 'name' | 'description';
-    const enValue = (document.getElementById(`product-${field}-en`) as HTMLInputElement | HTMLTextAreaElement).value;
-    setState({ ...(field === 'name' ? { isTranslatingName: true } : { isTranslatingDesc: true }) });
-
-    const sr = await translateText(enValue, 'sr');
-    const ru = await translateText(enValue, 'ru');
-
-    (document.getElementById(`product-${field}-sr`) as HTMLInputElement | HTMLTextAreaElement).value = sr;
-    (document.getElementById(`product-${field}-ru`) as HTMLInputElement | HTMLTextAreaElement).value = ru;
-
-    setState({ ...(field === 'name' ? { isTranslatingName: false } : { isTranslatingDesc: false }) });
-  }
-});
-document.addEventListener('submit', (e) => {
-  const form = e.target as HTMLFormElement;
-  if (form.id === 'promo-notif-form') {
-    e.preventDefault();
-    const title = {
-      en: (document.getElementById('promo-notif-title-en') as HTMLInputElement).value,
-      sr: (document.getElementById('promo-notif-title-sr') as HTMLInputElement).value,
-      ru: (document.getElementById('promo-notif-title-ru') as HTMLInputElement).value,
-    };
-    const content = {
-      en: (document.getElementById('promo-notif-content-en') as HTMLTextAreaElement).value,
-      sr: (document.getElementById('promo-notif-content-sr') as HTMLTextAreaElement).value,
-      ru: (document.getElementById('promo-notif-content-ru') as HTMLTextAreaElement).value,
-    };
-
-    const newNotif = {
-      id: Date.now(),
-      date: new Date().toISOString().split('T')[0],
-      title,
-      content,
-    };
-
-    setState({
-      promoNotifHistory: [newNotif, ...state.promoNotifHistory]
-    });
-
-    alert('✅ Notification sent!');
-    form.reset();
-  }
-});
+// FIX: Removed redundant global `translateText` function and `click`/`submit` event listeners.
+// These were causing scope errors as they tried to access `ai` and `setState` from outside the `App` component.
+// The functionality is already correctly implemented inside the `App` component's event listeners and handlers,
+// which also use the correct, up-to-date Gemini API.
 
 const categories: { key: string; name: { [key in Language]: string } }[] = [
     { key: 'All', name: { en: 'All', sr: 'Све', ru: 'Все' } },
@@ -627,7 +581,7 @@ const state: AppState = {
 // Define which keys are persisted to localStorage.
 const persistedKeys = new Set<keyof AppState>([
     'products', 'newsItems', 'promotions', 'reviews', 'logoUrl', 'bannerUrl', 
-    'orderStatusNotifSettings', 'promoNotifHistory', 'userProfile'
+    'orderStatusNotifSettings', 'promoNotifHistory', 'userProfile', 'cart'
 ]);
 
 // Load persisted state from localStorage on startup.
@@ -653,58 +607,6 @@ const App = () => {
     
     // Using a microtask to batch potential synchronous updates into a single render.
     queueMicrotask(render);
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const action = target.dataset?.action;
-        const id = target.dataset?.productId;
-        if (!action || !id) return;
-
-        const productId = parseInt(id, 10);
-        if (action === 'increment') incrementItem(productId);
-        if (action === 'decrement') decrementItem(productId);
-    });
-    document.addEventListener('submit', (e) => {
-        if ((e.target as HTMLFormElement).id === 'profile-form') {
-            e.preventDefault();
-            const name = (document.getElementById('profile-name') as HTMLInputElement).value;
-            const email = (document.getElementById('profile-email') as HTMLInputElement).value;
-            setState({
-            userProfile: { ...state.userProfile, name, email },
-            isEditingProfile: false
-            });
-        }
-    });
-
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        if (target.id === 'edit-profile-btn') {
-            setState({ isEditingProfile: true });
-        }
-        if (target.id === 'cancel-edit-profile-btn') {
-            setState({ isEditingProfile: false });
-        }
-    });
-    document.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        if (target.id === 'voice-command-btn' && recognition) {
-            recognition.start();
-            setState({ isListening: true, voiceFeedback: 'Listening...' });
-        }
-    });
-
-    if (recognition) {
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-            const command = event.results[0][0].transcript;
-            setState({ voiceFeedback: `Heard: "${command}"`, isListening: false });
-
-            // Пример: просто показываем текст — добавь парсинг для команд
-            console.log('Voice command:', command);
-        };
-
-        recognition.onerror = () => {
-            setState({ voiceFeedback: 'Error or canceled.', isListening: false });
-        };
-    }
 }
 
   // --- App Initialization ---
@@ -729,32 +631,39 @@ const App = () => {
   };
 
   // --- CART LOGIC ---
-  const incrementItem = (productId: number) => {
-    const newCart = {...state.cart};
-    const currentQuantity = newCart[productId] || 0;
-    newCart[productId] = currentQuantity + 1;
-    setState({ cart: newCart });
-
-    if (currentQuantity === 0) {
-        const cartBtn = document.getElementById('cart-btn');
-        if (cartBtn) {
-            cartBtn.classList.add('updated');
-            setTimeout(() => {
-                cartBtn.classList.remove('updated');
-            }, 400);
-        }
+  const cartButtonAnimation = () => {
+    const cartBtn = document.getElementById('cart-btn');
+    if (cartBtn) {
+        cartBtn.classList.add('updated');
+        setTimeout(() => {
+            cartBtn.classList.remove('updated');
+        }, 400);
     }
   };
 
-  const decrementItem = (productId: number) => {
-    const newCart = {...state.cart};
-    const currentQuantity = newCart[productId] || 0;
-    if (currentQuantity > 1) {
-        newCart[productId] = currentQuantity - 1;
-    } else {
-        delete newCart[productId];
-    }
-    setState({ cart: newCart });
+  const addToCart = (productId: number) => {
+      const newCart = {...state.cart};
+      newCart[productId] = (newCart[productId] || 0) + 1;
+      setState({ cart: newCart });
+      cartButtonAnimation();
+  };
+
+  const decrementCartItem = (productId: number) => {
+      const newCart = {...state.cart};
+      if (newCart[productId] && newCart[productId] > 1) {
+          newCart[productId] -= 1;
+      } else {
+          delete newCart[productId];
+      }
+      setState({ cart: newCart });
+  };
+
+  const removeFromCart = (productId: number) => {
+      const newCart = {...state.cart};
+      if (newCart[productId]) {
+          delete newCart[productId];
+      }
+      setState({ cart: newCart });
   };
 
   const getCartItemCount = () => {
@@ -772,21 +681,21 @@ const App = () => {
   const renderQuantityControl = (product: Product, type: 'small' | 'large' = 'large') => {
       const quantity = state.cart[product.id] || 0;
       const lang = state.language;
-
-      if (quantity === 0) {
-          if (type === 'small') {
-              return `<button class="add-to-cart-btn-small" data-product-id="${product.id}" data-action="increment" aria-label="Add ${product.name[lang]} to cart">+</button>`;
-          }
-          return `<button class="add-to-cart-btn" data-product-id="${product.id}" data-action="increment">${t('addToCart')}</button>`;
+      
+      if (quantity > 0) {
+          return `
+            <div class="quantity-control ${type === 'small' ? 'small' : ''}">
+                <button class="quantity-btn" data-product-id="${product.id}" data-action="decrement" aria-label="Decrement quantity">-</button>
+                <span class="quantity-display">${quantity}</span>
+                <button class="quantity-btn" data-product-id="${product.id}" data-action="increment" aria-label="Increment quantity">+</button>
+            </div>
+          `;
       }
-
-      return `
-        <div class="quantity-control ${type === 'small' ? 'small' : ''}">
-            <button class="quantity-btn" data-product-id="${product.id}" data-action="decrement" aria-label="Decrease quantity of ${product.name[lang]}">-</button>
-            <span class="quantity-display" aria-live="polite">${quantity}</span>
-            <button class="quantity-btn" data-product-id="${product.id}" data-action="increment" aria-label="Increase quantity of ${product.name[lang]}">+</button>
-        </div>
-      `;
+  
+      if (type === 'small') {
+          return `<button class="add-to-cart-btn-small" data-product-id="${product.id}" data-action="increment" aria-label="Add ${product.name[lang]} to cart">+</button>`;
+      }
+      return `<button class="add-to-cart-btn" data-product-id="${product.id}" data-action="increment">${t('addToCart')}</button>`;
   }
   
   const renderHeader = () => {
@@ -962,11 +871,16 @@ const App = () => {
             <img src="${product.image}" alt="${product.name[lang]}" class="cart-item-img">
             <div class="cart-item-details">
                 <h4>${product.name[lang]}</h4>
-                <p class="cart-item-price">${product.price.toFixed(0)} RSD</p>
-                 <p class="cart-item-subtotal"><b>${(product.price * quantity).toFixed(0)} RSD</b></p>
+                <p class="cart-item-price">${(product.price * quantity).toFixed(0)} RSD</p>
+                <p class="cart-item-subtotal">${quantity} ${t('pieces')} x ${product.price.toFixed(0)} RSD</p>
             </div>
             <div class="cart-item-actions">
-                ${renderQuantityControl(product, 'large')}
+                 <div class="quantity-control">
+                    <button class="quantity-btn" data-product-id="${product.id}" data-action="decrement" aria-label="Decrement quantity">-</button>
+                    <span class="quantity-display">${quantity}</span>
+                    <button class="quantity-btn" data-product-id="${product.id}" data-action="increment" aria-label="Increment quantity">+</button>
+                </div>
+                <button class="delete-btn" data-product-id="${product.id}" data-action="remove" aria-label="Remove ${product.name[lang]} from cart">${t('delete')}</button>
             </div>
         </div>
       `;
@@ -1617,8 +1531,13 @@ const App = () => {
       if (quantityButton) {
           const productId = parseInt(quantityButton.dataset.productId!, 10);
           const action = quantityButton.dataset.action;
-          if (action === 'increment') incrementItem(productId);
-          else if (action === 'decrement') decrementItem(productId);
+          if (action === 'increment') {
+              addToCart(productId);
+          } else if (action === 'decrement') {
+              decrementCartItem(productId);
+          } else if (action === 'remove') {
+              removeFromCart(productId);
+          }
           return;
       }
       
@@ -1648,6 +1567,7 @@ const App = () => {
                 try {
                     checkoutBtn.disabled = true;
                     checkoutBtn.textContent = t('processing');
+                    console.log({ window.Telegram.WebApp.initData, orderData });
                     const response = await fetch(backendUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
